@@ -1,0 +1,111 @@
+#include "pgm_utils.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h> 
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION 
+#include "stb_image_write.h"
+
+int *pgm_loader(const char *filename, int *width, int *height) {
+    FILE *fp = fopen(filename, "r");
+    if (!fp) {
+        perror("Error opening file");
+        return NULL;
+    }
+
+    if (fscanf(fp, "%d %d", width, height) != 2) {
+        fprintf(stderr, "Missing image size\n");
+        fclose(fp);
+        return NULL;
+    }
+
+    //Allocating memory for the image
+    int *image = malloc((*width) * (*height) * sizeof(int));
+    if (!image) {
+        fprintf(stderr, "Error allocating memory\n");
+        fclose(fp);
+        return NULL;
+    }
+
+    //Copying image
+    for (int i = 0; i < (*width) * (*height); ++i) {
+        if (fscanf(fp, "%d", &image[i]) != 1) {
+            fprintf(stderr, "Error reading pixel\n");
+            free(image);
+            fclose(fp);
+            return NULL;
+        }
+    }
+
+    fclose(fp);
+    return image;
+}
+
+float *pgm_normalisation(int* matrix, int n) {
+    float* normalized = malloc(n * sizeof(float));
+
+    if (!normalized) {
+        fprintf(stderr, "Error allocating memory\n");
+        return NULL;
+    }
+
+    for (int i = 0; i < n; i++) {
+        normalized[i] = matrix[i] / 255.0f;
+    }
+
+    return normalized;
+}
+
+unsigned char* pgm_denormalisation(float* matrix, int n) {
+    unsigned char* denormalized = malloc(n * sizeof(unsigned char));
+    if (!denormalized) return NULL;
+
+    for (int i = 0; i < n; i++) {
+        float val = matrix[i];
+        if (val < 0.0f) val = 0.0f;
+        else if (val > 1.0f) val = 1.0f;
+        denormalized[i] = (unsigned char)(val * 255.0f);
+    }
+    return denormalized;
+}
+
+void pgm_save(const char *filename, unsigned char* vec, int size){
+    int width = (int)sqrt((double)size);
+
+    FILE *fp = fopen(filename, "w");
+    if (!fp) {
+        perror("Error opening file");
+        exit(1);
+    }
+
+    fprintf(fp, "%d %d\n", width, width); 
+    for (int i = 0; i < size; i++) {
+        fprintf(fp, "%u\n", (unsigned int)vec[i]);
+    }
+
+    fclose(fp);
+}
+
+int png_save(const char *filename, unsigned char* vec, int size) {
+    int width = (int)sqrt((double)size);
+    
+    int channels = 1; 
+    int stride_in_bytes = width * channels;
+
+    int success = stbi_write_png(
+        filename, 
+        width, 
+        width, 
+        channels, 
+        vec, 
+        stride_in_bytes
+    );
+    
+    if (success) {
+        printf("PNG saved: %s (Dim: %dx%d)\n", filename, width, width); 
+        return 0;
+    } else {
+        fprintf(stderr, "Error saving PNG: %s\n", filename);
+        return -2;
+    }
+}

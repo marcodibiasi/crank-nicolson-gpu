@@ -1,0 +1,11 @@
+obj/
+*.o
+cn
+cn.exe
+*~
+*.swp
+*.swo
+.vscode/
+.idea/
+.DS_Store  
+data/img/*.png
