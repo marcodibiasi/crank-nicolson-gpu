@@ -45,6 +45,7 @@ __kernel void reduce_sum4_float4_sliding(
         if (li == 0)
             acc += local_memory[0];
 
+        barrier(CLK_LOCAL_MEM_FENCE);
         gi += lws;
     }
 
