@@ -176,7 +176,7 @@ void conjugate_gradient(Solver* solver) {
     cl_mem Ap = clCreateBuffer(solver->cl.ctx, CL_MEM_READ_WRITE, length * sizeof(float), NULL, &err);
     ocl_check(err, "clCreateBuffer failed for Ap");
 
-    float r_dot_z;
+    float r_dot_z = 0.0f;
 
     // profiling 
     struct timespec start, end;
@@ -225,6 +225,7 @@ void conjugate_gradient(Solver* solver) {
         printf("\t(r_(k+1) · z_(k+1))\n");
         float nextr_dot_nextz = dot_product_handler(solver, &r_next_buffer, &z_next_buffer, solver->size); 
         float beta = nextr_dot_nextz / r_dot_z;
+        r_dot_z = nextr_dot_nextz;
         printf("\n\tBeta = %g\n", beta);
 
         // Update the search direction p = z_(k+1) + beta * p
@@ -295,7 +296,8 @@ float alpha_calculate(Solver* solver, cl_mem *r, cl_mem *z, cl_mem *p, cl_mem* A
 
     // r * z
     printf("\t(r · z)\n");
-    *r_dot_z = dot_product_handler(solver, r, z, length);
+    if (*r_dot_z == 0)
+        *r_dot_z = dot_product_handler(solver, r, z, length);
 
     // p * A * p
     printf("\n\t(p * A * p)\n");
