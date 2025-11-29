@@ -12,11 +12,10 @@
 #endif
 
 typedef struct{
-    cl_kernel reduce_sum4_float4_sliding;
-    cl_kernel update_x;
-    cl_kernel update_r_and_z;
-    cl_kernel update_p;
     cl_kernel dot_product_vec4;
+    cl_kernel reduce_sum4_float4_sliding;
+    cl_kernel update_r_and_z;
+    cl_kernel update_x_and_p;
     cl_kernel obm_matvec_mult;
 } OpenCLKernels;
 
@@ -62,6 +61,7 @@ cl_event obm_matvec_mult(Solver* solver, cl_mem* vec, cl_mem* result);
 cl_event update_x(Solver *solver, cl_mem* p, float alpha, int length);
 cl_event update_p(Solver *solver, cl_mem* p, cl_mem* z, float beta, int length);
 cl_event update_r_and_z(Solver* solver, cl_mem* r, cl_mem* Ap, cl_mem* precond, cl_mem* r_next, cl_mem* z_next, float alpha, int length);
+cl_event update_x_and_p(Solver* solver, cl_mem* x, cl_mem* p, cl_mem* z, cl_mem* x_next, cl_mem* p_next, float alpha, float beta, int length);
 void free_cg_solver(Solver* solver);
 void save_result(Solver *solver, cl_mem buf, size_t size, int n);
 float profiling_event(cl_event event);

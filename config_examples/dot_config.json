@@ -1,0 +1,9 @@
+{
+  "simulation": {
+    "file": "data/input/dot.pgm",
+    "dx": 0.1,
+    "dt": 0.1,
+    "alpha": 0.1,
+    "iterations": 1
+  }
+}

@@ -103,61 +103,11 @@ __kernel void obm_matvec_mult(
 }
 
 
-__kernel void mult_vectors(
-    __global const float* vec1,
-    __global const float* vec2,
-    __global float* result,
-    const int lenght
-)
-{
-    int global_id = get_global_id(0);
-    if (global_id < lenght) 
-        result[global_id] = vec1[global_id] * vec2[global_id];
-}
-
-
-__kernel void sum_vectors(
-    __global const float* vec1,
-    __global const float* vec2,
-    __global float* result,
-    const int lenght
-)
-{
-    int global_id = get_global_id(0);
-    if (global_id < lenght) 
-        result[global_id] = vec1[global_id] + vec2[global_id];
-}
-
-
-__kernel void scale_vector(
-    __global const float* vec_in,
-    __global float* vec_out,
-    const float scale,
-    const int lenght
-)
-{
-    int global_id = get_global_id(0);
-    if (global_id < lenght) 
-        vec_out[global_id] = vec_in[global_id] * scale;
-}
-
-__kernel void update_x(
-    __global float* x,
-    __global const float* p,
-    const float alpha,
-    const int length
-)
-{
-    int global_id = get_global_id(0);
-    if (global_id < length) 
-        x[global_id] += alpha * p[global_id];
-}  
-
 __kernel void update_r_and_z(
     __global const float* r,
     __global const float* Ap,
     __global const float* precond,
-    __global float* r_next,  // at the start it contains A * p  
+    __global float* r_next, 
     __global float* z_next,
     const float alpha,
     const int length
@@ -171,17 +121,24 @@ __kernel void update_r_and_z(
         r_next[global_id] = r_i;
         z_next[global_id] = r_i * precond[global_id];
     }
-}  
+} 
 
-__kernel void update_p(
-    __global float* p,
+
+__kernel void update_x_and_p(
+    __global const float* x,
+    __global const float* p,
     __global const float* z,
+    __global float* x_next, 
+    __global float* p_next,
+    const float alpha,
     const float beta,
     const int length
 )
 {
     int global_id = get_global_id(0);
-    if (global_id < length) {     
-        p[global_id] = z[global_id] + beta * p[global_id];
+
+    if (global_id < length) {
+        x_next[global_id] = x[global_id] + alpha * p[global_id];
+        p_next[global_id] = z[global_id] + beta * p[global_id];
     }
-} 
+}  

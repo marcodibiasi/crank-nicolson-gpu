@@ -8,7 +8,7 @@
 // ./cn config.json
 int main(int argc, char *argv[]) {
     if(argc < 2) {
-        fprintf(stderr, "Usage: config.json [-E]\n", argv[0]);
+        fprintf(stderr, "Usage: config.json [-e show_energy] [-p profile] [-v verbose]\n", argv[0]);
         return EXIT_FAILURE;
     }
 
