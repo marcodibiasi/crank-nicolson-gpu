@@ -4,6 +4,7 @@
 #include "obm.h"
 #include "conjugate_gradient.h"
 #include "pgm_utils.h"
+#include "flags.h"
 
 
 typedef struct {
@@ -25,8 +26,8 @@ typedef struct {
 
 CrankNicolsonSetup *setup(int size, float dx, float dt, float alpha, float *u_curr);
 OBMatrix define_matrix(float clr, int size);
-void run(CrankNicolsonSetup *solver, int iterations);
-void iterate(CrankNicolsonSetup *solver);
+void run(CrankNicolsonSetup *solver, int iterations, Flags *flags);
+float iterate(CrankNicolsonSetup *solver, Flags *flags);
 void free_solver(CrankNicolsonSetup *solver);
 
 #endif

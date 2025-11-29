@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include "flags.h"
 
 #define RESET   "\033[0m"
 #define TITLE   "\033[92m" 
@@ -68,30 +69,39 @@ OBMatrix define_matrix(float clr, int size) {
     };
 }
 
-void run(CrankNicolsonSetup *solver, int iterations){
+void run(CrankNicolsonSetup *solver, int iterations, Flags *flags){
+    float elapsed = 0.0f;
+
     for (int i = 0; i < iterations; i++){
-        iterate(solver);
+        elapsed += iterate(solver, flags);
         float* new_b = calculate_unknown_vector(solver->cg_solver.cl, solver->B, solver->cg_solver.x);
         memcpy(solver->b, new_b, solver->size * sizeof(float));
         free(new_b);
         update_unknown_b(&solver->cg_solver, solver->b);
     }
+
+    printf(TITLE "\nSimulation completed.\n" RESET
+       LABEL "Total elapsed time: " RESET "%.3f s\n"
+       LABEL "Average time per iteration: " RESET "%.3f s\n\n",
+       elapsed, elapsed / iterations);
 }
 
-void iterate(CrankNicolsonSetup *solver){
-    conjugate_gradient(&solver->cg_solver);
+float iterate(CrankNicolsonSetup *solver, Flags *flags) {
+    float elapsed = conjugate_gradient(&solver->cg_solver, flags);
     
     // Saving
     char path_png[256];
     sprintf(path_png, "data/img/t%d.png", solver->time_step);
     unsigned char* vec = pgm_denormalisation(solver->cg_solver.x, solver->size);
-    png_save(path_png, vec, solver->size);
+    png_save(path_png, vec, solver->size, flags->verbose);
     
     // char path_pgm[256];
     // sprintf(path_pgm, "data/simulation/t%d.pgm", solver->time_step);
     // pgm_save(path_pgm, vec, solver->size);
 
     solver->time_step++;
+
+    return elapsed;
 }
 
 void free_solver(CrankNicolsonSetup *solver) {

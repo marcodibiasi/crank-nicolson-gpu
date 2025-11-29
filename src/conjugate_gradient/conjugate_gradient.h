@@ -2,6 +2,7 @@
 #define CONJUGATE_GRADIENT_H
 
 #include "obm.h"
+#include "flags.h"
 
 #ifdef __APPLE__
 #include <OpenCL/opencl.h>
@@ -17,9 +18,6 @@ typedef struct{
     cl_kernel update_p;
     cl_kernel dot_product_vec4;
     cl_kernel obm_matvec_mult;
-    cl_kernel mult_vectors;
-    cl_kernel sum_vectors;
-    cl_kernel scale_vector;
 } OpenCLKernels;
 
 typedef struct{
@@ -55,15 +53,12 @@ typedef struct {
 
 Solver setup_solver(int size, OBMatrix A_obm, float *b, float *initial_x);
 OpenCLContext setup_opencl_context(Solver* solver);
-void conjugate_gradient(Solver* solver);
-float alpha_calculate(Solver* solver, cl_mem* r, cl_mem* z, cl_mem* p, cl_mem* Ap, float *r_dot_z);
+float conjugate_gradient(Solver* solver, Flags *flags);
+float alpha_calculate(Solver* solver, cl_mem* r, cl_mem* z, cl_mem* p, cl_mem* Ap, float *r_dot_z, Flags *flags);
 cl_event dot_product_vec4(Solver *solver, cl_mem* vec1, cl_mem* vec2, cl_mem* result, int length);
-float dot_product_handler(Solver *solver, cl_mem *vec1, cl_mem *vec2, int length);
+float dot_product_handler(Solver *solver, cl_mem *vec1, cl_mem *vec2, int length, Flags *flags);
 cl_event reduce_sum4_float4_sliding(Solver *solver, cl_mem* vec_in, cl_mem* vec_out, int length);
-cl_event sum_vectors(Solver* solver, cl_mem* vec1, cl_mem* vec2, cl_mem* result, int lenght);
-cl_event scale_vector(Solver* solver, cl_mem* vec, float scale, cl_mem* result, int lenght);
 cl_event obm_matvec_mult(Solver* solver, cl_mem* vec, cl_mem* result);
-cl_event mult_vectors(Solver* solver, cl_mem* vec1, cl_mem* vec2, cl_mem* result, int length);
 cl_event update_x(Solver *solver, cl_mem* p, float alpha, int length);
 cl_event update_p(Solver *solver, cl_mem* p, cl_mem* z, float beta, int length);
 cl_event update_r_and_z(Solver* solver, cl_mem* r, cl_mem* Ap, cl_mem* precond, cl_mem* r_next, cl_mem* z_next, float alpha, int length);

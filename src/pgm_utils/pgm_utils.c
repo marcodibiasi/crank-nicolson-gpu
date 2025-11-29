@@ -86,7 +86,7 @@ void pgm_save(const char *filename, unsigned char* vec, int size){
     fclose(fp);
 }
 
-int png_save(const char *filename, unsigned char* vec, int size) {
+int png_save(const char *filename, unsigned char* vec, int size, int verbose) {
     int width = (int)sqrt((double)size);
     
     int channels = 1; 
@@ -102,7 +102,9 @@ int png_save(const char *filename, unsigned char* vec, int size) {
     );
     
     if (success) {
-        printf("PNG saved: %s (Dim: %dx%d)\n", filename, width, width); 
+        if (verbose) {
+            printf("PNG saved: %s (Dim: %dx%d)\n", filename, width, width); 
+        }
         return 0;
     } else {
         fprintf(stderr, "Error saving PNG: %s\n", filename);
