@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <cJSON.h>
+#include "cJSON.h"
 
 Configuration* load_config(const char *path) {
     FILE *fp = fopen(path, "rb");

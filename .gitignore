@@ -9,3 +9,4 @@ cn.exe
 .idea/
 .DS_Store  
 data/img/*.png
+build/

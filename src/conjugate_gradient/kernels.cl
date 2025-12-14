@@ -102,6 +102,54 @@ __kernel void obm_matvec_mult(
     vec_out[global_id] = sum;
 }
 
+__kernel void obm_matvec_mult_local(
+    __global const float* values,
+    __global const int* offset,
+    const int non_zeros,
+
+    __local float* restrict local_memory,
+
+    __global const float* vec_in,
+    __global float* vec_out,
+
+    const int rows
+)
+{
+    int global_id = get_global_id(0);
+    int local_id = get_local_id(0);
+    int local_size = get_local_size(0);
+
+    if (global_id >= rows) return;
+
+    int group_start = get_group_id(0) * local_size;
+    int group_end = group_start + local_size - 1;
+
+    int min_index = group_start + offset[0];
+    int max_index = group_end + offset[non_zeros - 1];
+    int span = max_index - min_index + 1;
+
+    for (int i = local_id; i < span; i += local_size) {
+        int vec_index = min_index + i;
+        if (vec_index >= 0 && vec_index < rows) {
+            local_memory[i] = vec_in[vec_index];
+        } else {
+            local_memory[i] = 0.0f;
+        }
+    }
+
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    float sum = 0.0;
+    int local_row = global_id - group_start;
+
+    for (int i = 0; i < non_zeros; i++) {
+        int local_col = local_row + offset[i] - (min_index - group_start);
+        sum += values[i] * local_memory[local_col];
+    }
+
+    vec_out[global_id] = sum;
+}
+
 
 __kernel void update_r_and_z(
     __global const float* r,

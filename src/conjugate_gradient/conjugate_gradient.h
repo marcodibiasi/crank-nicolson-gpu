@@ -17,6 +17,7 @@ typedef struct{
     cl_kernel update_r_and_z;
     cl_kernel update_x_and_p;
     cl_kernel obm_matvec_mult;
+    cl_kernel obm_matvec_mult_local;
 } OpenCLKernels;
 
 typedef struct{
@@ -32,6 +33,8 @@ typedef struct{
     cl_int obm_rows;
     cl_mem obm_offset_buffer;
     cl_mem obm_values_buffer;
+
+    cl_mem B_obm_values_buffer;
 
     size_t lws;
 
@@ -58,6 +61,7 @@ cl_event dot_product_vec4(Solver *solver, cl_mem* vec1, cl_mem* vec2, cl_mem* re
 float dot_product_handler(Solver *solver, cl_mem *vec1, cl_mem *vec2, int length, Flags *flags);
 cl_event reduce_sum4_float4_sliding(Solver *solver, cl_mem* vec_in, cl_mem* vec_out, int length);
 cl_event obm_matvec_mult(Solver* solver, cl_mem* vec, cl_mem* result);
+cl_event obm_matvec_mult_local(Solver* solver, cl_mem* vec, cl_mem* result);
 cl_event update_x(Solver *solver, cl_mem* p, float alpha, int length);
 cl_event update_p(Solver *solver, cl_mem* p, cl_mem* z, float beta, int length);
 cl_event update_r_and_z(Solver* solver, cl_mem* r, cl_mem* Ap, cl_mem* precond, cl_mem* r_next, cl_mem* z_next, float alpha, int length);

@@ -17,18 +17,30 @@ cd crank-nicolson-gpu
 
 ### 🔨 Build the project
 
-Make sure you have a C compiler and OpenCL installed, then run:
+Make sure you have cmake installed, then:
 
 ```bash
-make
+cmake -B build -S .
+cmake --build build
 ```
+
+By default, this build is in **Debug** mode. To build in release mode for optimizations:
+
+```bash
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+```
+
+The executable will be located in `build/` as `cn`.
 
 ### ▶️ Run the solver
 
-The solver requires one `.pgm` grayscale heatmap and the physical parameters:
+The solver requires a json to run. The directory `config_examples` shows some examples. 
+To run:
 
 ```bash
-./cn input.pgm dx dt alpha iterations
+./build/cn config.json   # Linux/macOS
+build\cn.exe config.json  # Windows
 ```
 
 ### 📄 .pgm File

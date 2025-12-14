@@ -59,9 +59,20 @@ OpenCLContext setup_opencl_context(Solver* solver) {
     // OBM representation
     cl.obm_rows = solver->A_obm.rows;
     cl.obm_offset_buffer = clCreateBuffer(cl.ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-        solver->A_obm.non_zero_values * sizeof(float), solver->A_obm.offset, &err);
+        solver->A_obm.non_zero_values * sizeof(int), solver->A_obm.offset, &err);
     cl.obm_values_buffer = clCreateBuffer(cl.ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
         solver->A_obm.non_zero_values * sizeof(float), solver->A_obm.values, &err);
+    
+    float B_obm_values[] = {
+        -solver->A_obm.values[0],
+        -solver->A_obm.values[1],
+        1 - 2 * (-solver->A_obm.values[0]),
+        -solver->A_obm.values[3],
+        -solver->A_obm.values[4]
+    };
+
+    cl.B_obm_values_buffer = clCreateBuffer(cl.ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+        solver->A_obm.non_zero_values * sizeof(float), B_obm_values, &err);
     
     // Create kernels
     cl.kernels.reduce_sum4_float4_sliding = clCreateKernel(cl.prog, "reduce_sum4_float4_sliding", &err);
@@ -70,14 +81,17 @@ OpenCLContext setup_opencl_context(Solver* solver) {
     cl.kernels.dot_product_vec4 = clCreateKernel(cl.prog, "dot_product_vec4", &err);  
     ocl_check(err, "clCreateKernel failed");
 
-    cl.kernels.obm_matvec_mult = clCreateKernel(cl.prog, "obm_matvec_mult", &err);
-    ocl_check(err, "clCreateKernel failed");
-
     cl.kernels.update_r_and_z = clCreateKernel(cl.prog, "update_r_and_z", &err);
     ocl_check(err, "clCreateKernel failed for update_r_and_z");
     
     cl.kernels.update_x_and_p = clCreateKernel(cl.prog, "update_x_and_p", &err);
     ocl_check(err, "clCreateKernel failed for update_x_and_p");
+
+    cl.kernels.obm_matvec_mult = clCreateKernel(cl.prog, "obm_matvec_mult", &err);
+    ocl_check(err, "clCreateKernel failed");
+
+    cl.kernels.obm_matvec_mult_local = clCreateKernel(cl.prog, "obm_matvec_mult_local", &err);
+    ocl_check(err, "clCreateKernel failed");
 
     cl.lws = 128;
 
@@ -166,7 +180,7 @@ float conjugate_gradient(Solver* solver, Flags *flags) {
 
         VPRINTF(flags, "\033[1;32mITERATION %d\033[0m\n", k);
         // alpha = dot(r, z) / dot(p, mat_vec(A, p))
-        float alpha = alpha_calculate(solver, &r_buffer, &z_buffer, &direction_buffer, &Ap, &r_dot_z, flags);
+        alpha = alpha_calculate(solver, &r_buffer, &z_buffer, &direction_buffer, &Ap, &r_dot_z, flags);
         VPRINTF(flags, "Alpha = %g\n", alpha);
 
         // Calculate the new residue r_(k+1) = r - alpha * mat_vec(A, p)
@@ -261,8 +275,6 @@ float conjugate_gradient(Solver* solver, Flags *flags) {
 }
 
 float alpha_calculate(Solver* solver, cl_mem *r, cl_mem *z, cl_mem *p, cl_mem* Ap, float *r_dot_z, Flags *flags) {
-    cl_int err;
-    OpenCLContext *cl = &solver->cl;
     int length = solver->size;
 
     // r * z 
@@ -536,6 +548,7 @@ void free_cg_solver(Solver* solver) {
     if(cl->kernels.update_r_and_z) clReleaseKernel(cl->kernels.update_r_and_z);
     if(cl->kernels.update_x_and_p) clReleaseKernel(cl->kernels.update_x_and_p);
     if(cl->kernels.obm_matvec_mult) clReleaseKernel(cl->kernels.obm_matvec_mult);
+    if(cl->kernels.obm_matvec_mult_local) clReleaseKernel(cl->kernels.obm_matvec_mult_local);
 
     if(cl->prog) clReleaseProgram(cl->prog);
     if(cl->q) clReleaseCommandQueue(cl->q);
@@ -600,10 +613,58 @@ cl_event obm_matvec_mult(Solver* solver, cl_mem* vec, cl_mem* result) {
 
     //Launch the kernel
     cl_event event;
-    size_t gws = solver->size * cl->lws;
+    size_t gws = round_mul_up(solver->size, cl->lws);
     err = clEnqueueNDRangeKernel(cl->q, cl->kernels.obm_matvec_mult, 1, NULL,
             &gws, &cl->lws, 0, NULL, &event);
     ocl_check(err, "clEnqueueNDRangeKernel failed for obm_matvec_mult");
+
+    return event;
+}
+
+cl_event obm_matvec_mult_local(Solver* solver, cl_mem* vec, cl_mem* result) {
+    OpenCLContext *cl = &solver->cl;
+    cl_int err;
+    cl_int arg = 0;
+
+    int max_offset = solver->A_obm.offset[solver->A_obm.non_zero_values - 1];
+    int local_mem_size = cl->lws + 2*max_offset; 
+    local_mem_size *= sizeof(float); 
+
+    // Set kernel arguments
+    err = clSetKernelArg(cl->kernels.obm_matvec_mult_local, arg, sizeof(cl_mem), &cl->obm_values_buffer);
+    ocl_check(err, "clSetKernelArg local failed for obm_values_buffer");
+    arg++;
+
+    err = clSetKernelArg(cl->kernels.obm_matvec_mult_local, arg, sizeof(cl_mem), &cl->obm_offset_buffer);
+    ocl_check(err, "clSetKernelArg failed for obm_offset_buffer");
+    arg++;
+
+    err = clSetKernelArg(cl->kernels.obm_matvec_mult_local, arg, sizeof(int), &solver->A_obm.non_zero_values);
+    ocl_check(err, "clSetKernelArg failed for non_zeros_values");
+    arg++;
+
+    err = clSetKernelArg(cl->kernels.obm_matvec_mult_local, arg, local_mem_size, NULL);
+    ocl_check(err, "clSetKernelArg failed for local_memory");
+    arg++;
+
+    err = clSetKernelArg(cl->kernels.obm_matvec_mult_local, arg, sizeof(cl_mem), vec);
+    ocl_check(err, "clSetKernelArg failed for vec");
+    arg++;
+
+    err = clSetKernelArg(cl->kernels.obm_matvec_mult_local, arg, sizeof(cl_mem), result);
+    ocl_check(err, "clSetKernelArg failed for result");
+    arg++;
+
+    err = clSetKernelArg(cl->kernels.obm_matvec_mult_local, arg, sizeof(int), &solver->size);
+    ocl_check(err, "clSetKernelArg failed for size");
+    arg++;
+
+    //Launch the kernel
+    cl_event event;
+    size_t gws = round_mul_up(solver->size, cl->lws);
+    err = clEnqueueNDRangeKernel(cl->q, cl->kernels.obm_matvec_mult_local, 1, NULL,
+            &gws, &cl->lws, 0, NULL, &event);
+    ocl_check(err, "clEnqueueNDRangeKernel failed for obm_matvec_mult_local");
 
     return event;
 }
@@ -646,7 +707,7 @@ float* calculate_unknown_vector(OpenCLContext cl, OBMatrix B, float* u_n) {
     arg++;
     
     cl_event event;
-    size_t gws = B.rows * cl.lws;
+    size_t gws = round_mul_up(B.rows, cl.lws);
     err = clEnqueueNDRangeKernel(cl.q, cl.kernels.obm_matvec_mult, 1, NULL,
             &gws, &cl.lws, 0, NULL, &event);
     ocl_check(err, "clEnqueueNDRangeKernel failed for obm_matvec_mult");
@@ -663,6 +724,45 @@ float* calculate_unknown_vector(OpenCLContext cl, OBMatrix B, float* u_n) {
 
     return b;
 }
+
+// float* calculate_unknown_vector(OpenCLContext cl, OBMatrix B, float* u_n) {
+//     cl_int err;
+//     cl_int arg = 0;
+
+//     err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(cl_mem), &cl.B_obm_values_buffer);
+//     ocl_check(err, "clSetKernelArg failed for obm_values_buffer");
+//     arg++;
+
+//     err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(cl_mem), &cl.obm_offset_buffer);
+//     ocl_check(err, "clSetKernelArg failed for obm_offset_buffer");
+//     arg++;
+
+//     int non_zero_values = 5;
+//     err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(int), &non_zero_values);
+//     ocl_check(err, "clSetKernelArg failed for non_zeros_values");
+//     arg++;
+
+//     err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(cl_mem), &cl.x_buffer);
+//     ocl_check(err, "clSetKernelArg failed for vec");
+//     arg++;
+
+//     err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(cl_mem), &cl.b_buffer);
+//     ocl_check(err, "clSetKernelArg failed for result");
+//     arg++;
+
+//     err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(int), &cl.obm_rows);
+//     ocl_check(err, "clSetKernelArg failed for size");
+//     arg++;
+    
+//     cl_event event;
+//     size_t gws = round_mul_up(B.rows, cl.lws);
+//     err = clEnqueueNDRangeKernel(cl.q, cl.kernels.obm_matvec_mult, 1, NULL,
+//             &gws, &cl.lws, 0, NULL, &event);
+//     ocl_check(err, "clEnqueueNDRangeKernel failed for obm_matvec_mult");
+
+//     return NULL;
+// }
+
 
 void update_unknown_b(Solver* solver, float* b){
     cl_int err;

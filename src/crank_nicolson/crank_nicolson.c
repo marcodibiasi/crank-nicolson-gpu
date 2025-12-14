@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <time.h>
 #include "flags.h"
 
 #define RESET   "\033[0m"
@@ -24,7 +25,7 @@ CrankNicolsonSetup *setup(int size, float dx, float dt, float alpha, float *u_cu
     cn_solver->rx = (alpha * dt) / (dx * dx);
     if (2 * cn_solver->rx > 1.0) {
         fprintf(stderr, 
-            "Warning: 2 * rx = %.2f > 1.0 — numerical oscillations may arise.\n",
+            "Warning: 2 * rx = %.2f > 1.0 - numerical oscillations may arise.\n",
             2 * cn_solver->rx);
     }
 
@@ -70,20 +71,28 @@ OBMatrix define_matrix(float clr, int size) {
 }
 
 void run(CrankNicolsonSetup *solver, int iterations, Flags *flags){
-    float elapsed = 0.0f;
+    float pcg_elapsed = 0.0f;
+
+    // profiling 
+    struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
     for (int i = 0; i < iterations; i++){
-        elapsed += iterate(solver, flags);
+        pcg_elapsed += iterate(solver, flags);
         float* new_b = calculate_unknown_vector(solver->cg_solver.cl, solver->B, solver->cg_solver.x);
         memcpy(solver->b, new_b, solver->size * sizeof(float));
         free(new_b);
         update_unknown_b(&solver->cg_solver, solver->b);
     }
 
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    float cn_elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+
     printf(TITLE "\nSimulation completed.\n" RESET
-       LABEL "Total elapsed time: " RESET "%.3f s\n"
-       LABEL "Average time per iteration: " RESET "%.3f s\n\n",
-       elapsed, elapsed / iterations);
+        LABEL "Total elapsed time: " RESET "%.3f s\n"
+        LABEL "Total PCG time: " RESET "%.3f s\n"
+        LABEL "Average time per PCG iteration: " RESET "%.3f s\n\n",
+        cn_elapsed, pcg_elapsed, pcg_elapsed / iterations);
 }
 
 float iterate(CrankNicolsonSetup *solver, Flags *flags) {

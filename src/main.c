@@ -8,7 +8,8 @@
 // ./cn config.json
 int main(int argc, char *argv[]) {
     if(argc < 2) {
-        fprintf(stderr, "Usage: config.json [-e show_energy] [-p profile] [-v verbose]\n", argv[0]);
+        fprintf(stderr, "Usage: config.json [-e show_energy] [-p profile] [-v verbose]\n");
+        fflush(stderr);
         return EXIT_FAILURE;
     }
 
@@ -42,10 +43,10 @@ int main(int argc, char *argv[]) {
     run(solver, cfg->iterations, &flags);
 
     // CLEAN UP
-    free_solver(solver);
-    free(img);
-    free(cfg->file);
-    free(cfg);
+    if (solver) free_solver(solver);
+    if (img) free(img);
+    if (cfg->file) free(cfg->file);
+    if (cfg) free(cfg);
 
     return EXIT_SUCCESS;
 }
