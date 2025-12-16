@@ -7,7 +7,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 add_compile_options(-Wno-error)
 
-# --- Sorgenti ---
+# --- Sources ---
 set(SRC
     src/main.c
     src/conjugate_gradient/conjugate_gradient.c
@@ -16,7 +16,7 @@ set(SRC
     src/config/config.c
 )
 
-# --- Eseguibile ---
+# --- Executable ---
 add_executable(cn ${SRC})
 
 # --- Include directories ---
@@ -28,21 +28,21 @@ target_include_directories(cn PRIVATE
     src/config
 )
 
-# --- Warning e ottimizzazioni ---
+# --- Warning
 target_compile_options(cn PRIVATE
     -Wall
     -Wextra
     -Wpedantic
 )
 
-# Ottimizzazioni per tipo di build
+# Builds 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(cn PRIVATE -O3)
 elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_options(cn PRIVATE -g)
 endif()
 
-# --- OpenCL (dipendenza di sistema) ---
+# --- OpenCL
 find_package(OpenCL REQUIRED)
 target_link_libraries(cn PRIVATE OpenCL::OpenCL)
 
@@ -75,6 +75,7 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(stb)
 
-# Includi la cartella contenente stb_image_write.h
 target_include_directories(cn PRIVATE ${stb_SOURCE_DIR})
 
+find_package(Threads REQUIRED)
+target_link_libraries(cn PRIVATE Threads::Threads)

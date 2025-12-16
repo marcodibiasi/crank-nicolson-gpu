@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "pgm_utils.h"
 #include "crank_nicolson.h"
 #include "config.h"
@@ -8,7 +9,7 @@
 // ./cn config.json
 int main(int argc, char *argv[]) {
     if(argc < 2) {
-        fprintf(stderr, "Usage: config.json [-e show_energy] [-p profile] [-v verbose]\n");
+        fprintf(stderr, "Usage: config.json [-e show_energy] [-p profile] [-v verbose] [--percentage]\n");
         fflush(stderr);
         return EXIT_FAILURE;
     }
@@ -26,6 +27,16 @@ int main(int argc, char *argv[]) {
         }
         else if(strcmp(argv[i], "-v") == 0) {
             flags.verbose = 1;
+        }
+        else if(strcmp(argv[i], "--progress") == 0) {
+            flags.progress = 1;
+        }
+    }
+
+    if(flags.progress == 1){
+        if(flags.show_energy == 1 || flags.profile == 1 || flags.verbose == 1) {
+            fprintf(stderr, "Flag --progress must be called alone\n");
+            return EXIT_FAILURE;
         }
     }
 

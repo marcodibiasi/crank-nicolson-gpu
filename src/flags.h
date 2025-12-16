@@ -8,6 +8,7 @@ typedef struct {
     int show_energy;
     int profile;
     int verbose;
+    int progress;
 } Flags;
 
 #endif

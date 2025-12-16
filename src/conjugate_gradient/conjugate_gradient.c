@@ -255,7 +255,7 @@ float conjugate_gradient(Solver* solver, Flags *flags) {
         free(ones);
     }
 
-    save_result(solver, cl->x_buffer, length * sizeof(float), 0);
+    // solver->x = save_result(solver, length * sizeof(float));
 
     clReleaseMemObject(Ap);
     clReleaseMemObject(diagonal_buffer);
@@ -555,23 +555,12 @@ void free_cg_solver(Solver* solver) {
     if(cl->ctx) clReleaseContext(cl->ctx);
 }  
 
-void save_result(Solver *solver, cl_mem buf, size_t size, int n) {
+void save_result(Solver *solver, size_t size, float* result) {
     OpenCLContext *cl = &solver->cl;
-    float* temp = malloc(size);
-    if (!temp) {
-        fprintf(stderr, "malloc failed\n");
-        exit(1);
-    }
 
-    clFinish(cl->q); 
-    cl_int err = clEnqueueReadBuffer(cl->q, buf, CL_TRUE, 0, size, solver->x, 0, NULL, NULL);
+    cl_int err = clEnqueueReadBuffer(cl->q, 
+            cl->x_buffer, CL_TRUE, 0, size * sizeof(float), result, 0, NULL, NULL);
     ocl_check(err, "print_buffer read");
-
-    for (int i = 0; i < n; i++) {
-        printf(" %.2f ", solver->x[i]);
-    }
-    // printf("\n");
-    free(temp);
 }
 
 float profiling_event(cl_event event) {

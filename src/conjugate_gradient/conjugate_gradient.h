@@ -67,7 +67,7 @@ cl_event update_p(Solver *solver, cl_mem* p, cl_mem* z, float beta, int length);
 cl_event update_r_and_z(Solver* solver, cl_mem* r, cl_mem* Ap, cl_mem* precond, cl_mem* r_next, cl_mem* z_next, float alpha, int length);
 cl_event update_x_and_p(Solver* solver, cl_mem* x, cl_mem* p, cl_mem* z, cl_mem* x_next, cl_mem* p_next, float alpha, float beta, int length);
 void free_cg_solver(Solver* solver);
-void save_result(Solver *solver, cl_mem buf, size_t size, int n);
+void save_result(Solver *solver, size_t size, float* result);
 float profiling_event(cl_event event);
 
 // Support functions for the Crank Nicolson solver
