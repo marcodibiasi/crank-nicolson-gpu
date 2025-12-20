@@ -52,11 +52,19 @@ Solver setup_solver(int size, OBMatrix A_obm, float *initial_b, float *initial_x
     and inverting it
     */
     //symmetrical offsets
+    
+    // The better alternative would be clEnqueueFillBuffer, but MacOS does not support it. 
+    // To make the software crossplatfrom, clEnqueueWriteBuffer has been used
     cl_int err;
     float diagonal_value = 1.0f / solver.A_obm.values[solver.A_obm.non_zero_values/2];
-    err = clEnqueueFillBuffer(solver.cl.q, solver.cl.temp.diagonal_buffer, 
-            &diagonal_value, sizeof(float), 0, sizeof(float) * solver.size, 0, NULL, NULL);
-    ocl_check(err, "clEnqueueFillBuffer failed for diagonal_buffer");
+    float *diag = malloc(sizeof(float) * solver.size);
+    for (int i = 0; i < solver.size; ++i) diag[i] = diagonal_value;
+
+    err = clEnqueueWriteBuffer(solver.cl.q, solver.cl.temp.diagonal_buffer, CL_TRUE, 0,
+            sizeof(float) * solver.size, diag, 0, NULL, NULL);
+
+    free(diag);
+    ocl_check(err, "clEnqueueWriteBuffer failed for diagonal_buffer");
 
     return solver;
 }
@@ -172,11 +180,15 @@ float conjugate_gradient(Solver* solver, Flags *flags) {
     where D is the diagonal of the matrix A
     */
     cl_event mat_vec_multiply_evt = obm_matvec_mult(solver, &cl->x_buffer, &temp->Ap);
+    clWaitForEvents(1, &mat_vec_multiply_evt);
+    clReleaseEvent(mat_vec_multiply_evt);
 
     cl_event initial_r_z = update_r_and_z(solver, 
             &cl->b_buffer, &temp->Ap, 
             &temp->diagonal_buffer, &temp->r_buffer, 
             &temp->z_buffer, 1, length);
+    clWaitForEvents(1, &initial_r_z);
+    clReleaseEvent(initial_r_z);
 
     /*
     STEP THREE: set first search direction p = z 
@@ -699,61 +711,6 @@ cl_event obm_matvec_mult_local(Solver* solver, cl_mem* vec, cl_mem* result) {
 }
 
 // SUPPORT FUNCTIONS FOR THE CRANK NICOLSON SOLVER, THEY ARE NOT CONJUGATE GRADIENT STEPS
-float* calculate_unknown_vector(OpenCLContext cl, OBMatrix B, float* u_n) {
-    cl_int err;
-    cl_int arg = 0;
-
-    cl_mem offset = clCreateBuffer(cl.ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-        B.non_zero_values * sizeof(float), B.offset, &err);
-    cl_mem values = clCreateBuffer(cl.ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-        B.non_zero_values * sizeof(float), B.values, &err);
-    cl_mem vec = clCreateBuffer(cl.ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-        B.rows * sizeof(float), u_n, &err);
-    cl_mem result = clCreateBuffer(cl.ctx, CL_MEM_READ_WRITE, B.rows * sizeof(float), NULL, &err);
-
-    err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(cl_mem), &values);
-    ocl_check(err, "clSetKernelArg failed for obm_values_buffer");
-    arg++;
-
-    err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(cl_mem), &offset);
-    ocl_check(err, "clSetKernelArg failed for obm_offset_buffer");
-    arg++;
-
-    err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(int), &B.non_zero_values);
-    ocl_check(err, "clSetKernelArg failed for non_zeros_values");
-    arg++;
-
-    err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(cl_mem), &vec);
-    ocl_check(err, "clSetKernelArg failed for vec");
-    arg++;
-
-    err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(cl_mem), &result);
-    ocl_check(err, "clSetKernelArg failed for result");
-    arg++;
-
-    err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(int), &B.rows);
-    ocl_check(err, "clSetKernelArg failed for size");
-    arg++;
-    
-    cl_event event;
-    size_t gws = round_mul_up(B.rows, cl.lws);
-    err = clEnqueueNDRangeKernel(cl.q, cl.kernels.obm_matvec_mult, 1, NULL,
-            &gws, &cl.lws, 0, NULL, &event);
-    ocl_check(err, "clEnqueueNDRangeKernel failed for obm_matvec_mult");
-
-    float *b = malloc(B.rows * sizeof(float));
-    err = clEnqueueReadBuffer(cl.q, result, CL_TRUE, 0, B.rows * sizeof(float), b, 
-            0, NULL, NULL);
-    ocl_check(err, "clEnqueueReadBuffer failed for result");
-
-    clReleaseMemObject(offset);
-    clReleaseMemObject(values);
-    clReleaseMemObject(vec);
-    clReleaseMemObject(result);
-
-    return b;
-}
-
 void update_unknown(Solver *solver){
     OpenCLContext cl = solver->cl;
     cl_int err;
@@ -788,12 +745,4 @@ void update_unknown(Solver *solver){
     err = clEnqueueNDRangeKernel(cl.q, cl.kernels.obm_matvec_mult, 1, NULL,
             &gws, &cl.lws, 0, NULL, &event);
     ocl_check(err, "clEnqueueNDRangeKernel failed for obm_matvec_mult");
-}
-
-
-void update_unknown_b(Solver* solver, float* b){
-    cl_int err;
-    err = clEnqueueWriteBuffer(solver->cl.q, solver->cl.b_buffer, CL_TRUE, 0,
-        solver->size * sizeof(float), b, 0, NULL, NULL);
-    ocl_check(err, "clEnqueueWriteBuffer failed for update_b");
 }
