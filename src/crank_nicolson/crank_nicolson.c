@@ -29,15 +29,14 @@ CrankNicolsonSetup *setup(int size, float dx, float dt, float alpha, float *u_cu
             "Warning: 2 * rx = %.2f > 1.0 - numerical oscillations may arise.\n",
             2 * cn_solver->rx);
     }
-
+    
     cn_solver->time_step = 0;
 
     cn_solver->A = define_matrix(cn_solver->rx, cn_solver->size);
     cn_solver->B = define_matrix(-cn_solver->rx, cn_solver->size);
-    cn_solver->cg_solver = setup_solver(size, cn_solver->A, u_curr, NULL);
-    cn_solver->b = calculate_unknown_vector(cn_solver->cg_solver.cl, cn_solver->B, u_curr);
-    update_unknown_b(&cn_solver->cg_solver, cn_solver->b);
-
+    cn_solver->cg_solver = setup_solver(size, cn_solver->A, NULL, u_curr);
+    update_unknown(&cn_solver->cg_solver);
+        
     printf(TITLE "\nSolver settings:\n" RESET
        LABEL "\tSize: " RESET "%d\n"
        LABEL "\tdx: " RESET "%.5f\n"
@@ -88,7 +87,7 @@ void run(CrankNicolsonSetup *solver, int iterations, Flags *flags){
     };
     pthread_mutex_init(&cn_shared_data.mutex, NULL);
     pthread_cond_init(&cn_shared_data.can_read, NULL);
-
+    
     pthread_t conjugate_gradient_t, save_frame_t;
     if(pthread_create(&conjugate_gradient_t, NULL, run_conjugate_gradient, (void*)&cn_shared_data) == 1){
         perror("pthread_create");
@@ -102,6 +101,11 @@ void run(CrankNicolsonSetup *solver, int iterations, Flags *flags){
 
     pthread_join(conjugate_gradient_t, NULL);
     pthread_join(save_frame_t, NULL);
+   
+    // Clean up
+    pthread_mutex_destroy(&cn_shared_data.mutex);
+    pthread_cond_destroy(&cn_shared_data.can_read);
+    free(buffs.data);
 }
 
 
@@ -125,14 +129,13 @@ void* run_conjugate_gradient(void* arg){
         save_result(&solver->cg_solver, solver->size, ptr_to_save); 
         t_args->buff_ready = 1;
 
+        solver->time_step++;
+
         pthread_cond_signal(&t_args->can_read);
         pthread_mutex_unlock(&t_args->mutex);
         
         // Update unknown b
-        float* new_b = calculate_unknown_vector(solver->cg_solver.cl, solver->B, ptr_to_save);
-        memcpy(solver->b, new_b, solver->size * sizeof(float));
-        free(new_b);
-        update_unknown_b(&solver->cg_solver, solver->b);
+        update_unknown(&solver->cg_solver);
     }
 
     clock_gettime(CLOCK_MONOTONIC, &end);
@@ -153,7 +156,8 @@ void* save_frame(void* args){
     BufferPool *buffs = t_args->buffs; 
     char path_png[256];
     float* ptr_to_save;
-    
+    unsigned char* vec;
+
     float percent = 0.0f;
     while(solver->time_step < t_args->iterations){
         if(t_args->flags->progress == 1){
@@ -171,23 +175,21 @@ void* save_frame(void* args){
         // Saving
         ptr_to_save = buffs->data + (t_args->which_buf * buffs->buf_size);
         sprintf(path_png, "data/img/t%d.png", solver->time_step);
-        unsigned char *vec = pgm_denormalisation(ptr_to_save, solver->size);
+        vec = pgm_denormalisation(ptr_to_save, solver->size);
         png_save(path_png, vec, solver->size, t_args->flags->verbose);
      
         // Switch buffer
         t_args->which_buf = (t_args->which_buf + 1) % buffs->n;
         t_args->buff_ready = 0;
 
-        solver->time_step++;
-
         pthread_mutex_unlock(&t_args->mutex);
     }
 
+    free(vec);
     return NULL;
 }
 
 void free_solver(CrankNicolsonSetup *solver) {
-    if(solver->u_current) free(solver->u_current);
     if(solver->b) free(solver->b);
     if(solver->A.offset) free(solver->A.offset);
     if(solver->A.values) free(solver->A.values);

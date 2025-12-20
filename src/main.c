@@ -9,7 +9,7 @@
 // ./cn config.json
 int main(int argc, char *argv[]) {
     if(argc < 2) {
-        fprintf(stderr, "Usage: config.json [-e show_energy] [-p profile] [-v verbose] [--percentage]\n");
+        fprintf(stderr, "Usage: config.json [-e show_energy] [-p profile] [-v verbose] [--progress]\n");
         fflush(stderr);
         return EXIT_FAILURE;
     }

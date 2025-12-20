@@ -10,3 +10,4 @@ cn.exe
 .DS_Store  
 data/img/*.png
 build/
+build-*/

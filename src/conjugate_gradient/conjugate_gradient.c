@@ -14,24 +14,49 @@
 #endif
 
 
-Solver setup_solver(int size, OBMatrix A_obm, float *b, float *initial_x) {
+Solver setup_solver(int size, OBMatrix A_obm, float *initial_b, float *initial_x) {
     Solver solver;
     solver.size = size;
     solver.A_obm = A_obm;
-    solver.b = b;
+    solver.b = initial_b;
     solver.x = initial_x;
 
+    if(!solver.b) {
+        printf("Initializing zero-vector b\n");
+        solver.b = malloc(size * sizeof(float));
+        if(!solver.b){
+            fprintf(stderr, "Failed to allocate memory for b vector\n");
+            exit(EXIT_FAILURE);
+        }
+        for(int i = 0; i < size; i++){
+            solver.b[i] = 0.0f;
+        }
+    }
+
     if (!solver.x) {
+        printf("Initializing zero-vector x\n");
         solver.x = malloc(size * sizeof(float));
-        if (!solver.x) {
+        if (!solver.x){
             fprintf(stderr, "Failed to allocate memory for x vector\n");
             exit(1);
         }
-        for (int i = 0; i < size; i++) {
-            solver.x[i] = 0.0;
+        for (int i = 0; i < size; i++){
+            solver.x[i] = 0.0f;
         }
     }
+
     solver.cl = setup_opencl_context(&solver);  
+
+    /*
+    Precondition with Jacobi by extracting the diagonal of the matrix A
+    and inverting it
+    */
+    //symmetrical offsets
+    cl_int err;
+    float diagonal_value = 1.0f / solver.A_obm.values[solver.A_obm.non_zero_values/2];
+    err = clEnqueueFillBuffer(solver.cl.q, solver.cl.temp.diagonal_buffer, 
+            &diagonal_value, sizeof(float), 0, sizeof(float) * solver.size, 0, NULL, NULL);
+    ocl_check(err, "clEnqueueFillBuffer failed for diagonal_buffer");
 
     return solver;
 }
@@ -66,14 +91,16 @@ OpenCLContext setup_opencl_context(Solver* solver) {
     float B_obm_values[] = {
         -solver->A_obm.values[0],
         -solver->A_obm.values[1],
-        1 - 2 * (-solver->A_obm.values[0]),
+        2 + (-solver->A_obm.values[2]),
         -solver->A_obm.values[3],
         -solver->A_obm.values[4]
     };
 
     cl.B_obm_values_buffer = clCreateBuffer(cl.ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
         solver->A_obm.non_zero_values * sizeof(float), B_obm_values, &err);
-    
+
+    cl.temp = temporary_buffers_init(&cl, solver->size);
+
     // Create kernels
     cl.kernels.reduce_sum4_float4_sliding = clCreateKernel(cl.prog, "reduce_sum4_float4_sliding", &err);
     ocl_check(err, "clCreateKernel failed");
@@ -98,9 +125,38 @@ OpenCLContext setup_opencl_context(Solver* solver) {
     return cl;
 }
 
+TemporaryBuffers temporary_buffers_init(OpenCLContext *cl, int length) {
+    TemporaryBuffers temp;
+    cl_int err;
+
+    temp.diagonal_buffer = clCreateBuffer(cl->ctx, CL_MEM_READ_WRITE, length * sizeof(float), NULL, &err); 
+    ocl_check(err, "clCreateBuffer failed for diagonal_buffer");
+    
+    temp.r_buffer = clCreateBuffer(cl->ctx, CL_MEM_READ_WRITE, length * sizeof(float), NULL, &err);
+    ocl_check(err, "clCreateBuffer failed for r_buffer");
+    
+    temp.Ap = clCreateBuffer(cl->ctx, CL_MEM_READ_WRITE, length * sizeof(float), NULL, &err);
+    ocl_check(err, "clCreateBuffer failed for Ap");
+
+    temp.z_buffer = clCreateBuffer(cl->ctx, CL_MEM_READ_WRITE, length * sizeof(float), NULL, &err);
+    ocl_check(err, "clCreateBuffer failed for z_buffer");
+    
+    temp.p_buffer = clCreateBuffer(cl->ctx, CL_MEM_READ_WRITE, length * sizeof(float), NULL, &err);
+    ocl_check(err, "clCreateBuffer failed for p_buffer");
+
+    temp.r_next_buffer = clCreateBuffer(cl->ctx, CL_MEM_READ_WRITE, length * sizeof(float), NULL, &err);
+    ocl_check(err, "clCreateBuffer failed for r_next_buffer");
+
+    temp.z_next_buffer = clCreateBuffer(cl->ctx, CL_MEM_READ_WRITE, length * sizeof(float), NULL, &err);
+    ocl_check(err, "clCreateBuffer failed for z_next_buffer");
+
+    return temp;
+}
+
 float conjugate_gradient(Solver* solver, Flags *flags) {
     cl_int err;
     OpenCLContext* cl = &solver->cl;
+    TemporaryBuffers *temp = &cl->temp;
 
     // SETUP 
     int length = solver->size;
@@ -111,62 +167,28 @@ float conjugate_gradient(Solver* solver, Flags *flags) {
     int k = 0;  // Iteration counter
 
     /*
-    STEP ZERO: Precondition with Jacobi by extracting the diagonal of the matrix A
-    and inverting it
-    */
-    cl_mem diagonal_buffer = clCreateBuffer(cl->ctx, CL_MEM_READ_WRITE, length * sizeof(float), NULL, &err); 
-
-    //symmetrical offsets
-    float diagonal_value =1.0f / solver->A_obm.values[solver->A_obm.non_zero_values/2];
-    ocl_check(err, "clCreateBuffer failed for diagonal_buffer");
-    err = clEnqueueFillBuffer(cl->q, diagonal_buffer, &diagonal_value, sizeof(float), 0,
-                    sizeof(float) * length, 0, NULL, NULL);
-    ocl_check(err, "clEnqueueFillBuffer failed for diagonal_buffer");
-
-    /*
     STEP ONE: Calculate initial residue r = b - Ax
     STEP TWO: Preconditioned residue z = D^(-1) * r
     where D is the diagonal of the matrix A
     */
-    cl_mem r_buffer = clCreateBuffer(cl->ctx, CL_MEM_READ_WRITE, length * sizeof(float), NULL, &err);
-    ocl_check(err, "clCreateBuffer failed for r_buffer");
+    cl_event mat_vec_multiply_evt = obm_matvec_mult(solver, &cl->x_buffer, &temp->Ap);
 
-    cl_mem Ap = clCreateBuffer(solver->cl.ctx, CL_MEM_READ_WRITE, length * sizeof(float), NULL, &err);
-    ocl_check(err, "clCreateBuffer failed for Ap");
-
-    cl_event mat_vec_multiply_evt = obm_matvec_mult(solver, &cl->x_buffer, &Ap);
-    clWaitForEvents(1, &mat_vec_multiply_evt);
-    clReleaseEvent(mat_vec_multiply_evt);
-
-    cl_mem z_buffer = clCreateBuffer(cl->ctx, CL_MEM_READ_WRITE, length * sizeof(float), NULL, &err);
-    ocl_check(err, "clCreateBuffer failed for z_buffer");
-
-    cl_event initial_r_z = update_r_and_z(solver, &cl->b_buffer, &Ap, &diagonal_buffer, &r_buffer, &z_buffer, 1, length);
+    cl_event initial_r_z = update_r_and_z(solver, 
+            &cl->b_buffer, &temp->Ap, 
+            &temp->diagonal_buffer, &temp->r_buffer, 
+            &temp->z_buffer, 1, length);
 
     /*
     STEP THREE: set first search direction p = z 
     */
-    cl_mem direction_buffer = clCreateBuffer(cl->ctx, CL_MEM_READ_WRITE, length * sizeof(float), NULL, &err);
-	ocl_check(err, "clCreateBuffer failed for direction_buffer");
-
     cl_event copy_buffer_evt;
-    err = clEnqueueCopyBuffer(cl->q, z_buffer, direction_buffer, 0, 0, 
+    err = clEnqueueCopyBuffer(cl->q, temp->z_buffer, temp->p_buffer, 0, 0, 
         length * sizeof(float), 0, NULL, &copy_buffer_evt);
     ocl_check(err, "clEnqueueCopyBuffer failed for direction_buffer");
-
-    clWaitForEvents(1, &copy_buffer_evt);
-    clReleaseEvent(copy_buffer_evt);
 
     /*
     STEP FOUR: main loop of the Conjugate Gradient algorithm
     */
-    // Allocate buffers for the next iteration
-    cl_mem r_next_buffer = clCreateBuffer(cl->ctx, CL_MEM_READ_WRITE, length * sizeof(float), NULL, &err);
-    ocl_check(err, "clCreateBuffer failed for r_next_buffer");
-
-    cl_mem z_next_buffer = clCreateBuffer(cl->ctx, CL_MEM_READ_WRITE, length * sizeof(float), NULL, &err);
-    ocl_check(err, "clCreateBuffer failed for r_next_buffer");
-
     float r_dot_z = 0.0f;
 
     // profiling 
@@ -180,12 +202,17 @@ float conjugate_gradient(Solver* solver, Flags *flags) {
 
         VPRINTF(flags, "\033[1;32mITERATION %d\033[0m\n", k);
         // alpha = dot(r, z) / dot(p, mat_vec(A, p))
-        alpha = alpha_calculate(solver, &r_buffer, &z_buffer, &direction_buffer, &Ap, &r_dot_z, flags);
+        alpha = alpha_calculate(solver, &temp->r_buffer, 
+                &temp->z_buffer, &temp->p_buffer, &temp->Ap, &r_dot_z, flags);
         VPRINTF(flags, "Alpha = %g\n", alpha);
 
         // Calculate the new residue r_(k+1) = r - alpha * mat_vec(A, p)
         // Calculate the new preconditioned residue z_(k+1) = D^(-1) * r_(k+1)
-        cl_event next_r_z = update_r_and_z(solver, &r_buffer, &Ap, &diagonal_buffer, &r_next_buffer, &z_next_buffer, alpha, length);
+        cl_event next_r_z = update_r_and_z(solver, 
+                &temp->r_buffer, &temp->Ap, 
+                &temp->diagonal_buffer, &temp->r_next_buffer, 
+                &temp->z_next_buffer, alpha, length);
+        
         if(flags->profile) {
             clWaitForEvents(1, &next_r_z);
             float nextrz_t = profiling_event(next_r_z);
@@ -196,18 +223,21 @@ float conjugate_gradient(Solver* solver, Flags *flags) {
         }
 
         // Calculate the norm of the new residue ||r_(k+1)||^2
-        r_norm = dot_product_handler(solver, &r_next_buffer, &r_next_buffer, length, flags);
+        r_norm = dot_product_handler(solver, &temp->r_next_buffer, &temp->r_next_buffer, length, flags);
         VPRINTF(flags, "Residue norm = %g\n", r_norm);
 
         // beta = dot(r_(k+1), z_(k+1)) / dot(r, z)
-        float nextr_dot_nextz = dot_product_handler(solver, &r_next_buffer, &z_next_buffer, solver->size, flags); 
+        float nextr_dot_nextz = dot_product_handler(solver, &temp->r_next_buffer, 
+                &temp->z_next_buffer, solver->size, flags); 
         float beta = nextr_dot_nextz / r_dot_z;
         r_dot_z = nextr_dot_nextz;
         VPRINTF(flags, "Beta = %g\n", beta);
 
         // Update the solution vector x = x + alpha * p
         // Update the search direction p = z_(k+1) + beta * p
-        cl_event next_x_p = update_x_and_p(solver, &cl->x_buffer, &direction_buffer, &z_next_buffer, &cl->x_buffer, &direction_buffer, alpha, beta, length);
+        cl_event next_x_p = update_x_and_p(solver, &cl->x_buffer, 
+                &temp->p_buffer, &temp->z_next_buffer, 
+                &cl->x_buffer, &temp->p_buffer, alpha, beta, length);
         
         if(flags->profile) {
             clWaitForEvents(1, &next_x_p);
@@ -220,13 +250,13 @@ float conjugate_gradient(Solver* solver, Flags *flags) {
 
         // Swap the buffers for the next iteration
         cl_mem tmp;
-        tmp = r_buffer;
-        r_buffer = r_next_buffer;
-        r_next_buffer = tmp;
+        tmp = temp->r_buffer;
+        temp->r_buffer = temp->r_next_buffer;
+        temp->r_next_buffer = tmp;
 
-        tmp = z_buffer;
-        z_buffer = z_next_buffer;
-        z_next_buffer = tmp;
+        tmp = temp->z_buffer;
+        temp->z_buffer = temp->z_next_buffer;
+        temp->z_next_buffer = tmp;
 
 
         clock_gettime(CLOCK_MONOTONIC, &iter_end);
@@ -255,15 +285,13 @@ float conjugate_gradient(Solver* solver, Flags *flags) {
         free(ones);
     }
 
-    // solver->x = save_result(solver, length * sizeof(float));
-
-    clReleaseMemObject(Ap);
-    clReleaseMemObject(diagonal_buffer);
-    clReleaseMemObject(r_buffer);
-    clReleaseMemObject(z_buffer);
-    clReleaseMemObject(direction_buffer);
-    clReleaseMemObject(r_next_buffer);
-    clReleaseMemObject(z_next_buffer);
+    //clReleaseMemObject(temp->Ap);
+    //clReleaseMemObject(temp->diagonal_buffer);
+    //clReleaseMemObject(temp->r_buffer);
+    //clReleaseMemObject(temp->z_buffer);
+    //clReleaseMemObject(temp->p_buffer);
+    //clReleaseMemObject(temp->r_next_buffer);
+    //clReleaseMemObject(temp->z_next_buffer);
 
     VPRINTF(flags, "\033[1;32mCONVERGENCE\033[0m\n");
     VPRINTF(flags, "Iterations: %d\nNorm %g\n", k, r_norm);
@@ -280,7 +308,6 @@ float alpha_calculate(Solver* solver, cl_mem *r, cl_mem *z, cl_mem *p, cl_mem* A
     // r * z 
     if (*r_dot_z == 0) 
         *r_dot_z = dot_product_handler(solver, r, z, length, flags);
-    
 
     // p * A * p
     cl_event mat_vec_multiply_evt = obm_matvec_mult(solver, p, Ap);
@@ -535,8 +562,9 @@ cl_event update_x_and_p(Solver* solver, cl_mem* x, cl_mem* p, cl_mem* z, cl_mem*
 
 void free_cg_solver(Solver* solver) {
     OpenCLContext* cl = &solver->cl;
-
+    
     if(solver->x) free(solver->x);
+    if(solver->b) free(solver->b);
 
     if(cl->b_buffer) clReleaseMemObject(cl->b_buffer);
     if(cl->x_buffer) clReleaseMemObject(cl->x_buffer);
@@ -550,10 +578,22 @@ void free_cg_solver(Solver* solver) {
     if(cl->kernels.obm_matvec_mult) clReleaseKernel(cl->kernels.obm_matvec_mult);
     if(cl->kernels.obm_matvec_mult_local) clReleaseKernel(cl->kernels.obm_matvec_mult_local);
 
+    free_temporary_buffers(cl);
+        
     if(cl->prog) clReleaseProgram(cl->prog);
     if(cl->q) clReleaseCommandQueue(cl->q);
     if(cl->ctx) clReleaseContext(cl->ctx);
-}  
+} 
+
+void free_temporary_buffers(OpenCLContext *cl){
+    if(cl->temp.Ap) clReleaseMemObject(cl->temp.Ap);
+    if(cl->temp.diagonal_buffer) clReleaseMemObject(cl->temp.diagonal_buffer);
+    if(cl->temp.r_buffer) clReleaseMemObject(cl->temp.r_buffer);
+    if(cl->temp.z_buffer) clReleaseMemObject(cl->temp.z_buffer);
+    if(cl->temp.p_buffer) clReleaseMemObject(cl->temp.p_buffer);
+    if(cl->temp.r_next_buffer) clReleaseMemObject(cl->temp.r_next_buffer);
+    if(cl->temp.z_next_buffer) clReleaseMemObject(cl->temp.z_next_buffer);
+}
 
 void save_result(Solver *solver, size_t size, float* result) {
     OpenCLContext *cl = &solver->cl;
@@ -714,43 +754,41 @@ float* calculate_unknown_vector(OpenCLContext cl, OBMatrix B, float* u_n) {
     return b;
 }
 
-// float* calculate_unknown_vector(OpenCLContext cl, OBMatrix B, float* u_n) {
-//     cl_int err;
-//     cl_int arg = 0;
+void update_unknown(Solver *solver){
+    OpenCLContext cl = solver->cl;
+    cl_int err;
+    cl_int arg = 0;
 
-//     err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(cl_mem), &cl.B_obm_values_buffer);
-//     ocl_check(err, "clSetKernelArg failed for obm_values_buffer");
-//     arg++;
+    err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(cl_mem), &cl.B_obm_values_buffer);
+    ocl_check(err, "clSetKernelArg failed for obm_values_buffer");
+    arg++;
 
-//     err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(cl_mem), &cl.obm_offset_buffer);
-//     ocl_check(err, "clSetKernelArg failed for obm_offset_buffer");
-//     arg++;
+    err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(cl_mem), &cl.obm_offset_buffer);
+    ocl_check(err, "clSetKernelArg failed for obm_offset_buffer");
+    arg++;
 
-//     int non_zero_values = 5;
-//     err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(int), &non_zero_values);
-//     ocl_check(err, "clSetKernelArg failed for non_zeros_values");
-//     arg++;
+    err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(int), &solver->A_obm.non_zero_values);
+    ocl_check(err, "clSetKernelArg failed for non_zeros_values");
+    arg++;
 
-//     err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(cl_mem), &cl.x_buffer);
-//     ocl_check(err, "clSetKernelArg failed for vec");
-//     arg++;
+    err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(cl_mem), &cl.x_buffer);
+    ocl_check(err, "clSetKernelArg failed for vec");
+    arg++;
 
-//     err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(cl_mem), &cl.b_buffer);
-//     ocl_check(err, "clSetKernelArg failed for result");
-//     arg++;
+    err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(cl_mem), &cl.b_buffer);
+    ocl_check(err, "clSetKernelArg failed for result");
+    arg++;
 
-//     err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(int), &cl.obm_rows);
-//     ocl_check(err, "clSetKernelArg failed for size");
-//     arg++;
+    err = clSetKernelArg(cl.kernels.obm_matvec_mult, arg, sizeof(int), &solver->size);
+    ocl_check(err, "clSetKernelArg failed for size");
+    arg++;
     
-//     cl_event event;
-//     size_t gws = round_mul_up(B.rows, cl.lws);
-//     err = clEnqueueNDRangeKernel(cl.q, cl.kernels.obm_matvec_mult, 1, NULL,
-//             &gws, &cl.lws, 0, NULL, &event);
-//     ocl_check(err, "clEnqueueNDRangeKernel failed for obm_matvec_mult");
-
-//     return NULL;
-// }
+    cl_event event;
+    size_t gws = round_mul_up(solver->size, cl.lws);
+    err = clEnqueueNDRangeKernel(cl.q, cl.kernels.obm_matvec_mult, 1, NULL,
+            &gws, &cl.lws, 0, NULL, &event);
+    ocl_check(err, "clEnqueueNDRangeKernel failed for obm_matvec_mult");
+}
 
 
 void update_unknown_b(Solver* solver, float* b){

@@ -1,4 +1,4 @@
-#ifndef CONJUGATE_GRADIENT_H    
+#ifndef CONJUGATE_GRADIENT_H
 #define CONJUGATE_GRADIENT_H
 
 #include "obm.h"
@@ -21,6 +21,16 @@ typedef struct{
 } OpenCLKernels;
 
 typedef struct{
+    cl_mem r_buffer;
+    cl_mem diagonal_buffer;
+    cl_mem Ap;
+    cl_mem z_buffer;
+    cl_mem p_buffer;
+    cl_mem r_next_buffer;
+    cl_mem z_next_buffer;
+} TemporaryBuffers;
+
+typedef struct{
     cl_platform_id p;
 	cl_device_id d;
 	cl_context ctx;
@@ -35,12 +45,13 @@ typedef struct{
     cl_mem obm_values_buffer;
 
     cl_mem B_obm_values_buffer;
+    
+    TemporaryBuffers temp;
 
     size_t lws;
 
     OpenCLKernels kernels;
 } OpenCLContext;
-
 
 typedef struct {
     int size;
@@ -55,6 +66,7 @@ typedef struct {
 
 Solver setup_solver(int size, OBMatrix A_obm, float *b, float *initial_x);
 OpenCLContext setup_opencl_context(Solver* solver);
+TemporaryBuffers temporary_buffers_init(OpenCLContext *cl, int length);
 float conjugate_gradient(Solver* solver, Flags *flags);
 float alpha_calculate(Solver* solver, cl_mem* r, cl_mem* z, cl_mem* p, cl_mem* Ap, float *r_dot_z, Flags *flags);
 cl_event dot_product_vec4(Solver *solver, cl_mem* vec1, cl_mem* vec2, cl_mem* result, int length);
@@ -67,11 +79,13 @@ cl_event update_p(Solver *solver, cl_mem* p, cl_mem* z, float beta, int length);
 cl_event update_r_and_z(Solver* solver, cl_mem* r, cl_mem* Ap, cl_mem* precond, cl_mem* r_next, cl_mem* z_next, float alpha, int length);
 cl_event update_x_and_p(Solver* solver, cl_mem* x, cl_mem* p, cl_mem* z, cl_mem* x_next, cl_mem* p_next, float alpha, float beta, int length);
 void free_cg_solver(Solver* solver);
+void free_temporary_buffers(OpenCLContext *cl);
 void save_result(Solver *solver, size_t size, float* result);
 float profiling_event(cl_event event);
 
 // Support functions for the Crank Nicolson solver
 float* calculate_unknown_vector(OpenCLContext cl, OBMatrix B, float* u_n);
 void update_unknown_b(Solver* solver, float* b);
+void update_unknown(Solver* solver);
 
 #endif // CONJUGATE_GRADIENT_H 

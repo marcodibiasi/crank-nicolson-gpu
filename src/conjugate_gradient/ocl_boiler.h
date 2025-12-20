@@ -47,6 +47,7 @@ void ocl_check(cl_int err, const char *msg, ...) {
 		va_end(ap);
 		msg_buf[BUFSIZE] = '\0';
 		fprintf(stderr, "%s - error %d\n", msg_buf, err);
+        fflush(stderr);
 		exit(1);
 	}
 }
