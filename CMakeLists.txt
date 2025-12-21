@@ -77,5 +77,6 @@ FetchContent_MakeAvailable(stb)
 
 target_include_directories(cn PRIVATE ${stb_SOURCE_DIR})
 
+# --- pthread and semaphores
 find_package(Threads REQUIRED)
-target_link_libraries(cn PRIVATE Threads::Threads)
+target_link_libraries(cn PRIVATE Threads::Threads rt)

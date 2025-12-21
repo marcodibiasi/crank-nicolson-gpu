@@ -6,6 +6,7 @@
 #include <math.h>
 #include <time.h>
 #include <pthread.h>
+#include <semaphore.h>
 #include "flags.h"
 
 #define RESET   "\033[0m"
@@ -72,8 +73,10 @@ OBMatrix define_matrix(float clr, int size) {
 
 void run(CrankNicolsonSetup *solver, int iterations, Flags *flags){
     BufferPool buffs = {
-        .n = 2, 
-        .buf_size = solver->size
+        .n = 8, 
+        .buf_size = solver->size,
+        .head = 0,
+        .tail = 0
     };
     buffs.data = malloc(sizeof(float) * buffs.n * buffs.buf_size);
 
@@ -81,12 +84,11 @@ void run(CrankNicolsonSetup *solver, int iterations, Flags *flags){
         .solver = solver,
         .iterations = iterations,
         .flags = flags,
-        .buffs = &buffs,
-        .buff_ready = 0,
-        .which_buf = 0
+        .buffs = &buffs
     };
+    sem_init(&cn_shared_data.empty, 0, buffs.n);
+    sem_init(&cn_shared_data.full, 0, 0);
     pthread_mutex_init(&cn_shared_data.mutex, NULL);
-    pthread_cond_init(&cn_shared_data.can_read, NULL);
     
     pthread_t conjugate_gradient_t, save_frame_t;
     if(pthread_create(&conjugate_gradient_t, NULL, run_conjugate_gradient, (void*)&cn_shared_data) == 1){
@@ -103,8 +105,6 @@ void run(CrankNicolsonSetup *solver, int iterations, Flags *flags){
     pthread_join(save_frame_t, NULL);
    
     // Clean up
-    pthread_mutex_destroy(&cn_shared_data.mutex);
-    pthread_cond_destroy(&cn_shared_data.can_read);
     free(buffs.data);
 }
 
@@ -118,28 +118,40 @@ void* run_conjugate_gradient(void* arg){
 
     struct timespec start, end;
     clock_gettime(CLOCK_MONOTONIC, &start); 
+    float cn_elapsed = 0.0f;
+    float progress = 0.0f;
 
     while(solver->time_step < t_args->iterations){
+        if(t_args->flags->progress == 1){
+            clock_gettime(CLOCK_MONOTONIC, &end);
+            cn_elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+            progress = solver->time_step * 100 / t_args->iterations;
+
+            fprintf(stdout, "\rProgress: %3.0f%% \t [%3.3f s]", progress, cn_elapsed);
+            fflush(stdout);
+        }
+
         cg_elapsed += conjugate_gradient(&solver->cg_solver, t_args->flags);
-      
-        // Critical section: saving device buffer into host array
+    
+        // PRODUCER
+        sem_wait(&t_args->empty);
+
         pthread_mutex_lock(&t_args->mutex);
-        
-        ptr_to_save = buffs->data + (t_args->which_buf * buffs->buf_size);  
+        int buf_idx = buffs->head;
+        buffs->head = (buffs->head + 1) % buffs->n;
+        pthread_mutex_unlock(&t_args->mutex);
+
+        ptr_to_save = buffs->data + buf_idx * buffs->buf_size;  
         save_result(&solver->cg_solver, solver->size, ptr_to_save); 
-        t_args->buff_ready = 1;
+
+        sem_post(&t_args->full);
 
         solver->time_step++;
-
-        pthread_cond_signal(&t_args->can_read);
-        pthread_mutex_unlock(&t_args->mutex);
-        
-        // Update unknown b
         update_unknown(&solver->cg_solver);
     }
 
     clock_gettime(CLOCK_MONOTONIC, &end);
-    float cn_elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+    cn_elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
 
     printf(TITLE "\nSimulation completed.\n" RESET
         LABEL "Total elapsed time: " RESET "%.3f s\n"
@@ -158,34 +170,38 @@ void* save_frame(void* args){
     float* ptr_to_save;
     unsigned char* vec;
 
-    float percent = 0.0f;
+    //struct timespec start, end;
+
     while(solver->time_step < t_args->iterations){
-        if(t_args->flags->progress == 1){
-            percent = solver->time_step * 100 / t_args->iterations;
-            fprintf(stdout, "\rPercent: %3.1f%%", percent);
-            fflush(stdout);
-        }
-
-        // Critical section: waiting for host array to be ready to save the png
-        pthread_mutex_lock(&t_args->mutex);
-        while(!t_args->buff_ready){
-            pthread_cond_wait(&t_args->can_read, &t_args->mutex);
-        }
         
-        // Saving
-        ptr_to_save = buffs->data + (t_args->which_buf * buffs->buf_size);
-        sprintf(path_png, "data/img/t%d.png", solver->time_step);
-        vec = pgm_denormalisation(ptr_to_save, solver->size);
-        png_save(path_png, vec, solver->size, t_args->flags->verbose);
-     
-        // Switch buffer
-        t_args->which_buf = (t_args->which_buf + 1) % buffs->n;
-        t_args->buff_ready = 0;
+        // CONSUMER
+        sem_wait(&t_args->full);
 
+        pthread_mutex_lock(&t_args->mutex);
+        int buf_idx = buffs->tail;
+        buffs->tail = (buffs->tail + 1) % buffs->n;
         pthread_mutex_unlock(&t_args->mutex);
+
+    
+        if(solver->time_step % t_args->flags->delta_save == 0) {
+            ptr_to_save = buffs->data + buf_idx * buffs->buf_size;
+            sprintf(path_png, "data/img/t%d.png", solver->time_step);
+            vec = pgm_denormalisation(ptr_to_save, solver->size);
+            
+            //clock_gettime(CLOCK_MONOTONIC, &start); 
+            png_save(path_png, vec, solver->size, t_args->flags->verbose);
+            //clock_gettime(CLOCK_MONOTONIC, &end);
+
+            //float saving_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+            //printf("Saving time: %3.3f\n", saving_time);
+
+            free(vec);
+        }
+
+        sem_post(&t_args->empty);
+        
     }
 
-    free(vec);
     return NULL;
 }
 

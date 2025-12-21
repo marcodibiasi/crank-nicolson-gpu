@@ -2,6 +2,7 @@
 #define CRANK_NICOLSON_H
 
 #include <pthread.h>
+#include <semaphore.h>
 #include "obm.h"
 #include "conjugate_gradient.h"
 #include "pgm_utils.h"
@@ -28,9 +29,12 @@ typedef struct {
 
 // data has length n * buf_size
 typedef struct{
-    int n;
-    int buf_size;
     float* data;
+    int buf_size;
+    int n;
+
+    int head; // producer write
+    int tail; // consumer read 
 } BufferPool;
 
 typedef struct{
@@ -40,14 +44,9 @@ typedef struct{
 
     BufferPool* buffs;
 
-    // Signal if the second thread can save the image
-    int buff_ready;
-
-    // Indicates which buffer from the pool should be saved
-    int which_buf;
-
+    sem_t empty;
+    sem_t full;
     pthread_mutex_t mutex;
-    pthread_cond_t can_read;
 } ThreadArgs;
 
 CrankNicolsonSetup *setup(int size, float dx, float dt, float alpha, float *u_curr);

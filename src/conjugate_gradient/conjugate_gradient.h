@@ -84,8 +84,6 @@ void save_result(Solver *solver, size_t size, float* result);
 float profiling_event(cl_event event);
 
 // Support functions for the Crank Nicolson solver
-float* calculate_unknown_vector(OpenCLContext cl, OBMatrix B, float* u_n);
-void update_unknown_b(Solver* solver, float* b);
 void update_unknown(Solver* solver);
 
 #endif // CONJUGATE_GRADIENT_H 

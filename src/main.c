@@ -6,32 +6,17 @@
 #include "config.h"
 #include "flags.h"
 
-// ./cn config.json
+Flags parse_args(int argc, char* argv[]);
+
 int main(int argc, char *argv[]) {
     if(argc < 2) {
-        fprintf(stderr, "Usage: config.json [-e show_energy] [-p profile] [-v verbose] [--progress]\n");
+        fprintf(stderr, "Usage: config.json [--show-energy] [--profile] [--verbose] [--progress]\n");
         fflush(stderr);
         return EXIT_FAILURE;
     }
 
-    // HANDLE CONFIGURATION AND FLAGS
-    Configuration* cfg = load_config(argv[1]);
-
-    Flags flags = {0};
-    for(int i = 2; i < argc; i++) {
-        if(strcmp(argv[i], "-e") == 0) {
-            flags.show_energy = 1;
-        }
-        else if(strcmp(argv[i], "-p") == 0) {
-            flags.profile = 1;
-        }
-        else if(strcmp(argv[i], "-v") == 0) {
-            flags.verbose = 1;
-        }
-        else if(strcmp(argv[i], "--progress") == 0) {
-            flags.progress = 1;
-        }
-    }
+    // HANDLE FLAGS
+    Flags flags = parse_args(argc, argv);
 
     if(flags.progress == 1){
         if(flags.show_energy == 1 || flags.profile == 1 || flags.verbose == 1) {
@@ -39,6 +24,9 @@ int main(int argc, char *argv[]) {
             return EXIT_FAILURE;
         }
     }
+    
+    // HANDLE CONFIGURATION
+    Configuration* cfg = load_config(argv[1]);
 
     // INITIALIZE AND RUN SOLVER
     int width, height, *img;
@@ -60,4 +48,35 @@ int main(int argc, char *argv[]) {
     if (cfg) free(cfg);
 
     return EXIT_SUCCESS;
+}
+
+Flags parse_args(int argc, char* argv[]){
+    Flags flags = {0};
+    flags.delta_save = 1;
+
+    for(int i = 2; i < argc; i++) {
+        if(strcmp(argv[i], "--show-energy") == 0) {
+            flags.show_energy = 1;
+        }
+        else if(strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "--profile") == 0) {
+            flags.profile = 1;
+        }
+        else if(strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
+            flags.verbose = 1;
+        }
+        else if(strcmp(argv[i], "--progress") == 0) {
+            flags.progress = 1;
+        }
+        else if(strcmp(argv[i], "--delta-save") == 0){
+            if(i+1 < argc){
+                flags.delta_save = atoi(argv[i+1]);
+                i++;
+            } else {
+                fprintf(stderr, "--delta-save requires must be followed by an integer\n");
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+
+    return flags;
 }

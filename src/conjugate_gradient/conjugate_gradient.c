@@ -297,14 +297,6 @@ float conjugate_gradient(Solver* solver, Flags *flags) {
         free(ones);
     }
 
-    //clReleaseMemObject(temp->Ap);
-    //clReleaseMemObject(temp->diagonal_buffer);
-    //clReleaseMemObject(temp->r_buffer);
-    //clReleaseMemObject(temp->z_buffer);
-    //clReleaseMemObject(temp->p_buffer);
-    //clReleaseMemObject(temp->r_next_buffer);
-    //clReleaseMemObject(temp->z_next_buffer);
-
     VPRINTF(flags, "\033[1;32mCONVERGENCE\033[0m\n");
     VPRINTF(flags, "Iterations: %d\nNorm %g\n", k, r_norm);
     VPRINTF(flags, "Total time: %.3f s\n", elapsed);

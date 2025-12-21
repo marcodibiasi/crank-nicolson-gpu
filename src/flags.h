@@ -9,6 +9,7 @@ typedef struct {
     int profile;
     int verbose;
     int progress;
+    int delta_save;
 } Flags;
 
 #endif
