@@ -7,7 +7,7 @@
 #include "conjugate_gradient.h"
 #include "pgm_utils.h"
 #include "flags.h"
-
+#include "profiler.h"
 
 typedef struct {
     int size;   // Represents the length of the flattened image (Es. for img = 1024 x 1024, size = 1024**2)
@@ -29,7 +29,7 @@ typedef struct {
 
 // data has length n * buf_size
 typedef struct{
-    float* data;
+    float *data;
     int buf_size;
     int n;
 
@@ -40,9 +40,10 @@ typedef struct{
 typedef struct{
     CrankNicolsonSetup* solver;
     int iterations;
-    Flags* flags;
+    Flags *flags;
 
-    BufferPool* buffs;
+    BufferPool *buffs;
+    Profiler *profiler;
 
     sem_t empty;
     sem_t full;
@@ -51,7 +52,7 @@ typedef struct{
 
 CrankNicolsonSetup *setup(int size, float dx, float dt, float alpha, float *u_curr);
 OBMatrix define_matrix(float clr, int size);
-void run(CrankNicolsonSetup *solver, int iterations, Flags *flags);
+void run(CrankNicolsonSetup *solver, int iterations, Flags *flags, Profiler *p);
 void free_solver(CrankNicolsonSetup *solver);
 void* run_conjugate_gradient(void* arg);
 void* save_frame(void* arg);

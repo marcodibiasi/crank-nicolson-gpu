@@ -5,6 +5,7 @@
 #include "conjugate_gradient.h"
 #include "ocl_boiler.h"
 #include "flags.h"
+#include "profiler.h"
 
 #ifdef __APPLE__
 #include <OpenCL/opencl.h>
@@ -161,7 +162,7 @@ TemporaryBuffers temporary_buffers_init(OpenCLContext *cl, int length) {
     return temp;
 }
 
-float conjugate_gradient(Solver* solver, Flags *flags) {
+float conjugate_gradient(Solver* solver, Flags *flags, Profiler *p) {
     cl_int err;
     OpenCLContext* cl = &solver->cl;
     TemporaryBuffers *temp = &cl->temp;

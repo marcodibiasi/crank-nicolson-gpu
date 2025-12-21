@@ -5,12 +5,14 @@
 #include "crank_nicolson.h"
 #include "config.h"
 #include "flags.h"
+#include "profiler.h"
 
 Flags parse_args(int argc, char* argv[]);
 
 int main(int argc, char *argv[]) {
     if(argc < 2) {
-        fprintf(stderr, "Usage: config.json [--show-energy] [--profile] [--verbose] [--progress]\n");
+        fprintf(stderr, "Usage: config.json [--show-energy]" 
+                " [--profile] [--verbose] [--progress] [--delta-save=<n>]\n");
         fflush(stderr);
         return EXIT_FAILURE;
     }
@@ -28,6 +30,14 @@ int main(int argc, char *argv[]) {
     // HANDLE CONFIGURATION
     Configuration* cfg = load_config(argv[1]);
 
+
+    //HANDLE PROFILER 
+    Profiler *p = NULL;
+    if(flags.profile == 1) {
+        p = malloc(sizeof(Profiler));
+        profiler_init(p, cfg->iterations);
+    }
+
     // INITIALIZE AND RUN SOLVER
     int width, height, *img;
     if((img = pgm_loader(cfg->file, &width, &height)) == NULL) exit(EXIT_FAILURE);
@@ -39,7 +49,7 @@ int main(int argc, char *argv[]) {
     }
 
     CrankNicolsonSetup *solver = setup(width * width, cfg->dx, cfg->dt, cfg->alpha, norm_img);
-    run(solver, cfg->iterations, &flags);
+    run(solver, cfg->iterations, &flags, p);
 
     // CLEAN UP
     if (solver) free_solver(solver);
@@ -67,14 +77,8 @@ Flags parse_args(int argc, char* argv[]){
         else if(strcmp(argv[i], "--progress") == 0) {
             flags.progress = 1;
         }
-        else if(strcmp(argv[i], "--delta-save") == 0){
-            if(i+1 < argc){
-                flags.delta_save = atoi(argv[i+1]);
-                i++;
-            } else {
-                fprintf(stderr, "--delta-save requires must be followed by an integer\n");
-                exit(EXIT_FAILURE);
-            }
+        else if(strncmp(argv[i], "--delta-save=", 13) == 0){
+            flags.delta_save = atoi(argv[i] + 13);
         }
     }
 

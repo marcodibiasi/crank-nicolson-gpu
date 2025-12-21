@@ -3,6 +3,7 @@
 
 #include "obm.h"
 #include "flags.h"
+#include "profiler.h"
 
 #ifdef __APPLE__
 #include <OpenCL/opencl.h>
@@ -67,7 +68,7 @@ typedef struct {
 Solver setup_solver(int size, OBMatrix A_obm, float *b, float *initial_x);
 OpenCLContext setup_opencl_context(Solver* solver);
 TemporaryBuffers temporary_buffers_init(OpenCLContext *cl, int length);
-float conjugate_gradient(Solver* solver, Flags *flags);
+float conjugate_gradient(Solver* solver, Flags *flags, Profiler *p);
 float alpha_calculate(Solver* solver, cl_mem* r, cl_mem* z, cl_mem* p, cl_mem* Ap, float *r_dot_z, Flags *flags);
 cl_event dot_product_vec4(Solver *solver, cl_mem* vec1, cl_mem* vec2, cl_mem* result, int length);
 float dot_product_handler(Solver *solver, cl_mem *vec1, cl_mem *vec2, int length, Flags *flags);

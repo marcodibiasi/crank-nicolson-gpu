@@ -8,6 +8,7 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include "flags.h"
+#include "profiler.h"
 
 #define RESET   "\033[0m"
 #define TITLE   "\033[92m" 
@@ -71,7 +72,7 @@ OBMatrix define_matrix(float clr, int size) {
     };
 }
 
-void run(CrankNicolsonSetup *solver, int iterations, Flags *flags){
+void run(CrankNicolsonSetup *solver, int iterations, Flags *flags, Profiler *p){
     BufferPool buffs = {
         .n = 8, 
         .buf_size = solver->size,
@@ -84,7 +85,8 @@ void run(CrankNicolsonSetup *solver, int iterations, Flags *flags){
         .solver = solver,
         .iterations = iterations,
         .flags = flags,
-        .buffs = &buffs
+        .buffs = &buffs, 
+        .profiler = p
     };
     sem_init(&cn_shared_data.empty, 0, buffs.n);
     sem_init(&cn_shared_data.full, 0, 0);
@@ -131,7 +133,7 @@ void* run_conjugate_gradient(void* arg){
             fflush(stdout);
         }
 
-        cg_elapsed += conjugate_gradient(&solver->cg_solver, t_args->flags);
+        cg_elapsed += conjugate_gradient(&solver->cg_solver, t_args->flags, t_args->profiler);
     
         // PRODUCER
         sem_wait(&t_args->empty);

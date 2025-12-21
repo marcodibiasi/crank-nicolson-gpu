@@ -14,6 +14,7 @@ set(SRC
     src/crank_nicolson/crank_nicolson.c
     src/pgm_utils/pgm_utils.c
     src/config/config.c
+    src/profiler/profiler.c
 )
 
 # --- Executable ---
@@ -26,6 +27,7 @@ target_include_directories(cn PRIVATE
     src/crank_nicolson
     src/pgm_utils
     src/config
+    src/profiler
 )
 
 # --- Warning
