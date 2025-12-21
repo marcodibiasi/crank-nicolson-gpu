@@ -6,7 +6,7 @@
 #define NUM_OF_KERNELS 5
 
 typedef enum {
-    DOT_PRODUCT_VEC_4,
+    DOT_PRODUCT_VEC4,
     REDUCE_SUM4_FLOAT4_SLIDING,
     UPDATE_R_AND_Z,
     UPDATE_X_AND_P,
@@ -35,5 +35,5 @@ typedef struct{
 } Profiler;
 
 void profiler_init(Profiler *p, uint32_t iterations);
-
+KernelStats kernelstats_init();
 #endif
