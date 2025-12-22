@@ -48,3 +48,14 @@ void profile_kernel(Profiler *p, Kernels kernel, cl_event event){
     printf("DEBUG: %lf ms\n", current_exec_time);
 }
 
+double get_kernel_time(cl_event event){
+    cl_ulong start, end;
+    clGetEventProfilingInfo(event, CL_PROFILING_COMMAND_START, sizeof(start), &start, NULL);
+    clGetEventProfilingInfo(event, CL_PROFILING_COMMAND_END, sizeof(end), &end, NULL);
+
+    return (double) (end - start) / 1e6;
+}
+
+void add_kernel_sample(Profiler *p, Kernels kernel, double time_sample){ 
+    printf("DEBUG: %lf ms\n", time_sample);
+}

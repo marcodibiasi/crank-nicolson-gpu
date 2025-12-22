@@ -45,4 +45,6 @@ typedef struct{
 void profiler_init(Profiler *p, uint32_t iterations);
 KernelStats kernelstats_init();
 void profile_kernel(Profiler *p, Kernels kernel, cl_event event);
+double get_kernel_time(cl_event event);
+void add_kernel_sample(Profiler *p, Kernels kernel, double time_sample);
 #endif

@@ -69,9 +69,9 @@ Solver setup_solver(int size, OBMatrix A_obm, float *b, float *initial_x);
 OpenCLContext setup_opencl_context(Solver* solver);
 TemporaryBuffers temporary_buffers_init(OpenCLContext *cl, int length);
 float conjugate_gradient(Solver* solver, Flags *flags, Profiler *p);
-float alpha_calculate(Solver* solver, cl_mem* r, cl_mem* z, cl_mem* p, cl_mem* Ap, float *r_dot_z, Flags *flags);
+float alpha_calculate(Solver* solver, cl_mem* r, cl_mem* z, cl_mem* p, cl_mem* Ap, float *r_dot_z, Flags *flags, Profiler *profiler);
 cl_event dot_product_vec4(Solver *solver, cl_mem* vec1, cl_mem* vec2, cl_mem* result, int length);
-float dot_product_handler(Solver *solver, cl_mem *vec1, cl_mem *vec2, int length, Flags *flags);
+float dot_product_handler(Solver *solver, cl_mem *vec1, cl_mem *vec2, int length, Flags *flags, Profiler *p);
 cl_event reduce_sum4_float4_sliding(Solver *solver, cl_mem* vec_in, cl_mem* vec_out, int length);
 cl_event obm_matvec_mult(Solver* solver, cl_mem* vec, cl_mem* result);
 cl_event obm_matvec_mult_local(Solver* solver, cl_mem* vec, cl_mem* result);
@@ -82,8 +82,7 @@ cl_event update_x_and_p(Solver* solver, cl_mem* x, cl_mem* p, cl_mem* z, cl_mem*
 void free_cg_solver(Solver* solver);
 void free_temporary_buffers(OpenCLContext *cl);
 void save_result(Solver *solver, size_t size, float* result);
-float profiling_event(cl_event event);
-void show_energy(Solver *solver, Flags *flags);
+void show_energy(Solver *solver, Flags *flags, Profiler *p);
 
 // Support functions for the Crank Nicolson solver
 void update_unknown(Solver* solver);

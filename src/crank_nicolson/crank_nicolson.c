@@ -144,7 +144,7 @@ void* run_conjugate_gradient(void* arg){
         pthread_mutex_unlock(&t_args->mutex);
 
         ptr_to_save = buffs->data + buf_idx * buffs->buf_size;  
-        save_result(&solver->cg_solver, solver->size, ptr_to_save); 
+        save_result(&solver->cg_solver, buffs->buf_size, ptr_to_save); 
 
         sem_post(&t_args->full);
 
