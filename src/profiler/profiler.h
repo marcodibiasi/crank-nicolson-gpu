@@ -3,14 +3,22 @@
 
 #include <stdint.h>
 
-#define NUM_OF_KERNELS 5
+#ifdef __APPLE__
+#include <OpenCL/opencl.h>
+#else
+#define CL_TARGET_OPENCL_VERSION 120
+#include <CL/cl.h>
+#endif
+
+#define NUM_OF_KERNELS 6
 
 typedef enum {
     DOT_PRODUCT_VEC4,
     REDUCE_SUM4_FLOAT4_SLIDING,
     UPDATE_R_AND_Z,
     UPDATE_X_AND_P,
-    OBM_MATVEC_MULT
+    OBM_MATVEC_MULT,
+    UPDATE_B
 } Kernels;
 
 typedef struct{
@@ -36,4 +44,5 @@ typedef struct{
 
 void profiler_init(Profiler *p, uint32_t iterations);
 KernelStats kernelstats_init();
+void profile_kernel(Profiler *p, Kernels kernel, cl_event event);
 #endif

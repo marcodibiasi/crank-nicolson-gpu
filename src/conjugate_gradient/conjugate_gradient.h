@@ -83,6 +83,7 @@ void free_cg_solver(Solver* solver);
 void free_temporary_buffers(OpenCLContext *cl);
 void save_result(Solver *solver, size_t size, float* result);
 float profiling_event(cl_event event);
+void show_energy(Solver *solver, Flags *flags);
 
 // Support functions for the Crank Nicolson solver
 void update_unknown(Solver* solver);

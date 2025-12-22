@@ -180,16 +180,10 @@ float conjugate_gradient(Solver* solver, Flags *flags, Profiler *p) {
     STEP TWO: Preconditioned residue z = D^(-1) * r
     where D is the diagonal of the matrix A
     */
-    cl_event mat_vec_multiply_evt = obm_matvec_mult(solver, &cl->x_buffer, &temp->Ap);
-    clWaitForEvents(1, &mat_vec_multiply_evt);
-    clReleaseEvent(mat_vec_multiply_evt);
+    obm_matvec_mult(solver, &cl->x_buffer, &temp->Ap);
 
-    cl_event initial_r_z = update_r_and_z(solver, 
-            &cl->b_buffer, &temp->Ap, 
-            &temp->diagonal_buffer, &temp->r_buffer, 
-            &temp->z_buffer, 1, length);
-    clWaitForEvents(1, &initial_r_z);
-    clReleaseEvent(initial_r_z);
+    update_r_and_z(solver, &cl->b_buffer, &temp->Ap, &temp->diagonal_buffer, 
+            &temp->r_buffer, &temp->z_buffer, 1, length);
 
     /*
     STEP THREE: set first search direction p = z 
@@ -208,38 +202,33 @@ float conjugate_gradient(Solver* solver, Flags *flags, Profiler *p) {
     struct timespec start, end;
     struct timespec iter_start, iter_end;
     clock_gettime(CLOCK_MONOTONIC, &start);
-    
+
+    cl_event wait_list[NUM_OF_KERNELS];
+    int n_events;
+
     VPRINTF(flags, "\n");
     do {
+        n_events = 0;
         clock_gettime(CLOCK_MONOTONIC, &iter_start);
-
         VPRINTF(flags, "\033[1;32mITERATION %d\033[0m\n", k);
-        // alpha = dot(r, z) / dot(p, mat_vec(A, p))
+
+        // Calculate alpha = dot(r, z) / dot(p, mat_vec(A, p))
         alpha = alpha_calculate(solver, &temp->r_buffer, 
                 &temp->z_buffer, &temp->p_buffer, &temp->Ap, &r_dot_z, flags);
         VPRINTF(flags, "Alpha = %g\n", alpha);
 
         // Calculate the new residue r_(k+1) = r - alpha * mat_vec(A, p)
         // Calculate the new preconditioned residue z_(k+1) = D^(-1) * r_(k+1)
-        cl_event next_r_z = update_r_and_z(solver, 
-                &temp->r_buffer, &temp->Ap, 
+        wait_list[n_events++] = update_r_and_z(solver, &temp->r_buffer, &temp->Ap, 
                 &temp->diagonal_buffer, &temp->r_next_buffer, 
                 &temp->z_next_buffer, alpha, length);
         
-        if(flags->profile) {
-            clWaitForEvents(1, &next_r_z);
-            float nextrz_t = profiling_event(next_r_z);
-            printf("%-40s %-6.3f ms\n", "\tupdate_r_and_z kernel:", nextrz_t);
-            clReleaseEvent(next_r_z);
-            float gbps_update_rz = (5 * length * sizeof(float)) / (nextrz_t * 1e6);
-            printf("%-40s %.3f GB/s\n", "\tUpdate_r_and_z speed:", gbps_update_rz);
-        }
-
         // Calculate the norm of the new residue ||r_(k+1)||^2
-        r_norm = dot_product_handler(solver, &temp->r_next_buffer, &temp->r_next_buffer, length, flags);
+        r_norm = dot_product_handler(solver, &temp->r_next_buffer, 
+                &temp->r_next_buffer, length, flags);
         VPRINTF(flags, "Residue norm = %g\n", r_norm);
 
-        // beta = dot(r_(k+1), z_(k+1)) / dot(r, z)
+        // Calculate beta = dot(r_(k+1), z_(k+1)) / dot(r, z)
         float nextr_dot_nextz = dot_product_handler(solver, &temp->r_next_buffer, 
                 &temp->z_next_buffer, solver->size, flags); 
         float beta = nextr_dot_nextz / r_dot_z;
@@ -248,19 +237,10 @@ float conjugate_gradient(Solver* solver, Flags *flags, Profiler *p) {
 
         // Update the solution vector x = x + alpha * p
         // Update the search direction p = z_(k+1) + beta * p
-        cl_event next_x_p = update_x_and_p(solver, &cl->x_buffer, 
+        wait_list[n_events++] = update_x_and_p(solver, &cl->x_buffer, 
                 &temp->p_buffer, &temp->z_next_buffer, 
                 &cl->x_buffer, &temp->p_buffer, alpha, beta, length);
         
-        if(flags->profile) {
-            clWaitForEvents(1, &next_x_p);
-            float nextxp_t = profiling_event(next_x_p);
-            printf("%-40s %-6.3f ms\n", "\tupdate_x_and_p kernel:", nextxp_t);
-            clReleaseEvent(next_x_p);
-            float gbps_update_xp = (sizeof(float) * 4.0 * length) / (nextxp_t * 1e6);
-            printf("%-40s %.3f GB/s\n", "\tUpdate_x_and_p speed:", gbps_update_xp);
-        }
-
         // Swap the buffers for the next iteration
         cl_mem tmp;
         tmp = temp->r_buffer;
@@ -271,6 +251,16 @@ float conjugate_gradient(Solver* solver, Flags *flags, Profiler *p) {
         temp->z_buffer = temp->z_next_buffer;
         temp->z_next_buffer = tmp;
 
+        if(flags->profile){
+            clWaitForEvents(n_events, wait_list);
+            
+            profile_kernel(p, UPDATE_R_AND_Z, wait_list[0]);
+            profile_kernel(p, UPDATE_X_AND_P, wait_list[1]);
+
+            for(int i = 0; i < n_events; i++){
+                clReleaseEvent(wait_list[i]);
+            }
+        }
 
         clock_gettime(CLOCK_MONOTONIC, &iter_end);
         float iter_elapsed = (iter_end.tv_sec - iter_start.tv_sec) + (iter_end.tv_nsec - iter_start.tv_nsec) / 1e9;
@@ -283,20 +273,9 @@ float conjugate_gradient(Solver* solver, Flags *flags, Profiler *p) {
     clock_gettime(CLOCK_MONOTONIC, &end);
     float elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
 
-    // Show the total energy for at the end of the PCG simulation if the flag is set
-    if(flags->show_energy) {
-        float *ones = malloc(solver->size * sizeof(float));
-        for (int i = 0; i < solver->size; i++) ones[i] = 1.0f;
-
-        cl_mem ones_buffer = clCreateBuffer(cl->ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-            solver->size * sizeof(float), ones, &err);
-        
-        float energy = dot_product_handler(solver, &cl->x_buffer, &ones_buffer, solver->size, flags);
-        printf("\nTotal energy: %.0f", energy);
-
-        clReleaseMemObject(ones_buffer);
-        free(ones);
-    }
+    // Show the total energy (summation of each x_buffer value) 
+    // at the end of the PCG simulation if the flag is set
+    if(flags->show_energy) show_energy(solver, flags);
 
     VPRINTF(flags, "\033[1;32mCONVERGENCE\033[0m\n");
     VPRINTF(flags, "Iterations: %d\nNorm %g\n", k, r_norm);
@@ -346,7 +325,7 @@ float dot_product_handler(Solver *solver, cl_mem *vec1, cl_mem *vec2, int length
     cl_int err;
 
     if (length % 4 != 0) {
-        fprintf(stderr, "dot_product_handler: length (%d) not multiple of 4 — unsupported.\n", length);
+        fprintf(stderr, "dot_product_handler: length (%d) not multiple of 4 - unsupported.\n", length);
         exit(EXIT_FAILURE);
     }
 
@@ -701,6 +680,23 @@ cl_event obm_matvec_mult_local(Solver* solver, cl_mem* vec, cl_mem* result) {
     ocl_check(err, "clEnqueueNDRangeKernel failed for obm_matvec_mult_local");
 
     return event;
+}
+
+void show_energy(Solver *solver, Flags *flags){
+    cl_int err;
+
+    float *ones = malloc(solver->size * sizeof(float));
+    for(int i = 0; i < solver->size; i++) ones[i] = 1.0f;
+
+    cl_mem ones_buffer = clCreateBuffer(solver->cl.ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, 
+            solver->size * sizeof(float), ones, &err);
+    
+    float energy = dot_product_handler(solver, &solver->cl.x_buffer, 
+            &ones_buffer, solver->size, flags);
+    printf("\nTotal energy: %.0f", energy);
+
+    clReleaseMemObject(ones_buffer);
+    free(ones);
 }
 
 // SUPPORT FUNCTIONS FOR THE CRANK NICOLSON SOLVER, THEY ARE NOT CONJUGATE GRADIENT STEPS
