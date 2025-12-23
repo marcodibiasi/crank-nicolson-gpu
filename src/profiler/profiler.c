@@ -39,13 +39,8 @@ KernelStats kernelstats_init(){
 }
 
 void profile_kernel(Profiler *p, Kernels kernel, cl_event event){
-    cl_ulong start, end;
-    clGetEventProfilingInfo(event, CL_PROFILING_COMMAND_START, sizeof(start), &start, NULL);
-    clGetEventProfilingInfo(event, CL_PROFILING_COMMAND_END, sizeof(end), &end, NULL);
-
-    double current_exec_time = (double) (end - start) / 1e6;
-
-    printf("DEBUG: %lf ms\n", current_exec_time);
+    double current_exec_time = get_kernel_time(event);
+    add_kernel_sample(p, kernel, current_exec_time);
 }
 
 double get_kernel_time(cl_event event){
@@ -57,5 +52,17 @@ double get_kernel_time(cl_event event){
 }
 
 void add_kernel_sample(Profiler *p, Kernels kernel, double time_sample){ 
-    printf("DEBUG: %lf ms\n", time_sample);
+    // Handle count, total_time, min_time and max_time
+    p->kernels[kernel].count++;
+    p->kernels[kernel].total_time += time_sample;
+    if(p->kernels[kernel].min_time > time_sample) 
+        p->kernels[kernel].min_time = time_sample;
+    if(p->kernels[kernel].max_time < time_sample) 
+        p->kernels[kernel].max_time = time_sample;
+
+    // Handle time_mean and time_m2
+    double delta = time_sample - p->kernels[kernel].time_mean;
+    p->kernels[kernel].time_mean += delta / p->kernels[kernel].count; 
+    double delta2 = time_sample - p->kernels[kernel].time_mean;
+    p->kernels[kernel].time_m2 += delta * delta2;
 }

@@ -339,7 +339,6 @@ float dot_product_handler(Solver *solver, cl_mem *vec1, cl_mem *vec2, int length
     cl_mem out_buf = temp_buffer;
 
     float total_time = 0.0f;
-    float total_bytes = 0.0f;
 
     int elems_to_reduce = length_vec4; 
     while (elems_to_reduce > 1) {

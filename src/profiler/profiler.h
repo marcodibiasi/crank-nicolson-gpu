@@ -31,9 +31,9 @@ typedef struct{
 } KernelStats;
 
 typedef struct{
+    uint32_t iterations;
     KernelStats kernels[NUM_OF_KERNELS];
 
-    uint32_t iterations;
     double *cn_elapsed;
 
     uint32_t *cg_iterations;
