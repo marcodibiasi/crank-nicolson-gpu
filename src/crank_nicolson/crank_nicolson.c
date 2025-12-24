@@ -124,7 +124,7 @@ void* run_conjugate_gradient(void* arg){
     float progress = 0.0f;
 
     while(solver->time_step < t_args->iterations){
-        if(t_args->flags->progress == 1){
+        if(t_args->flags->progress){
             clock_gettime(CLOCK_MONOTONIC, &end);
             cn_elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
             progress = solver->time_step * 100 / t_args->iterations;
@@ -149,6 +149,8 @@ void* run_conjugate_gradient(void* arg){
         sem_post(&t_args->full);
 
         solver->time_step++;
+        if(t_args->flags->profile) t_args->profiler->curr_iteration = solver->time_step;
+
         update_unknown(&solver->cg_solver);
     }
 

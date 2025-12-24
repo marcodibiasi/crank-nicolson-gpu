@@ -203,7 +203,9 @@ float conjugate_gradient(Solver* solver, Flags *flags, Profiler *p) {
     struct timespec iter_start, iter_end;
     clock_gettime(CLOCK_MONOTONIC, &start);
 
+    // Advanced profiling
     cl_event wait_list[2];
+    if(flags->profile) kernelstats_init(p, p->curr_iteration);
 
     VPRINTF(flags, "\n");
     do {
@@ -253,12 +255,11 @@ float conjugate_gradient(Solver* solver, Flags *flags, Profiler *p) {
         if(flags->profile){
             clWaitForEvents(2, wait_list);
             
-            profile_kernel(p, UPDATE_R_AND_Z, wait_list[0]);
-            profile_kernel(p, UPDATE_X_AND_P, wait_list[1]);
-            
-            clReleaseEvent(wait_list[0]);
-            clReleaseEvent(wait_list[1]);
-        }
+            profile_kernel(p, UPDATE_R_AND_Z, wait_list[0], p->curr_iteration);
+            profile_kernel(p, UPDATE_X_AND_P, wait_list[1], p->curr_iteration);
+        }     
+        clReleaseEvent(wait_list[0]);
+        clReleaseEvent(wait_list[1]);
 
         clock_gettime(CLOCK_MONOTONIC, &iter_end);
         float iter_elapsed = (iter_end.tv_sec - iter_start.tv_sec) + (iter_end.tv_nsec - iter_start.tv_nsec) / 1e9;
@@ -292,13 +293,13 @@ float alpha_calculate(Solver* solver, cl_mem *r, cl_mem *z, cl_mem *p, cl_mem* A
         *r_dot_z = dot_product_handler(solver, r, z, length, flags, profiler);
 
     // p * A * p
-    cl_event mat_vec_multiply_evt = obm_matvec_mult(solver, p, Ap);
+    cl_event obm_matvec_evt = obm_matvec_mult(solver, p, Ap);
     
     if(flags->profile) {
-        clWaitForEvents(1, &mat_vec_multiply_evt);
-        profile_kernel(profiler, OBM_MATVEC_MULT, mat_vec_multiply_evt);
-        clReleaseEvent(mat_vec_multiply_evt);
+        clWaitForEvents(1, &obm_matvec_evt);
+        profile_kernel(profiler, OBM_MATVEC_MULT, obm_matvec_evt, profiler->curr_iteration);
     }
+    clReleaseEvent(obm_matvec_evt);
 
     float denominator = dot_product_handler(solver, p, Ap, length, flags, profiler);
     if (denominator == 0) {
@@ -328,9 +329,9 @@ float dot_product_handler(Solver *solver, cl_mem *vec1, cl_mem *vec2, int length
 
     if(flags->profile) {
         clWaitForEvents(1, &dot_event);
-        profile_kernel(p, DOT_PRODUCT_VEC4, dot_event);
-        clReleaseEvent(dot_event);
+        profile_kernel(p, DOT_PRODUCT_VEC4, dot_event, p->curr_iteration);
     }
+    clReleaseEvent(dot_event);
 
     cl_mem temp_buffer = clCreateBuffer(cl->ctx, CL_MEM_READ_WRITE, sizeof(float) * num_groups, NULL, &err);
     ocl_check(err, "clCreateBuffer failed for temp_buffer");
@@ -347,8 +348,9 @@ float dot_product_handler(Solver *solver, cl_mem *vec1, cl_mem *vec2, int length
         if (flags->profile) {
             clWaitForEvents(1, &evt);
             total_time += get_kernel_time(evt);
-            clReleaseEvent(evt);
         }
+        clReleaseEvent(evt);
+        
 
         int n_vec4 = (elems_to_reduce + 3) / 4;
         int next_num_groups = (int)round_div_up((size_t)n_vec4, cl->lws);
@@ -359,7 +361,8 @@ float dot_product_handler(Solver *solver, cl_mem *vec1, cl_mem *vec2, int length
         out_buf = tmp;
     }
 
-    if(flags->profile) add_kernel_sample(p, REDUCE_SUM4_FLOAT4_SLIDING, total_time);
+    if(flags->profile) 
+        add_kernel_sample(p, REDUCE_SUM4_FLOAT4_SLIDING, total_time, p->curr_iteration);
 
     float final_result = 0.0f;
     clEnqueueReadBuffer(cl->q, in_buf, CL_TRUE, 0, sizeof(float), &final_result, 0, NULL, NULL);

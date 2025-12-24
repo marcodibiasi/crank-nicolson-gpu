@@ -21,6 +21,8 @@ typedef enum {
     UPDATE_B
 } Kernels;
 
+extern const char *const kNames[NUM_OF_KERNELS];
+
 typedef struct{
     uint64_t count;
     double total_time;
@@ -32,19 +34,19 @@ typedef struct{
 
 typedef struct{
     uint32_t iterations;
-    KernelStats kernels[NUM_OF_KERNELS];
+    uint32_t curr_iteration;
+    KernelStats (*kernels)[NUM_OF_KERNELS];
 
     double *cn_elapsed;
 
     uint32_t *cg_iterations;
     double *cg_elapsed;
-
-    double *saving_time;
 } Profiler;
 
 void profiler_init(Profiler *p, uint32_t iterations);
-KernelStats kernelstats_init();
-void profile_kernel(Profiler *p, Kernels kernel, cl_event event);
+void kernelstats_init(Profiler *p, uint32_t iteration);
+KernelStats kernelstats_get();
+void profile_kernel(Profiler *p, Kernels kernel, cl_event event, uint32_t iteration);
 double get_kernel_time(cl_event event);
-void add_kernel_sample(Profiler *p, Kernels kernel, double time_sample);
+void add_kernel_sample(Profiler *p, Kernels kernel, double time_sample, uint32_t iteration);
 #endif
