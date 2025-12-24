@@ -10,15 +10,14 @@
 #include <CL/cl.h>
 #endif
 
-#define NUM_OF_KERNELS 6
+#define NUM_OF_KERNELS 5 
 
 typedef enum {
     DOT_PRODUCT_VEC4,
     REDUCE_SUM4_FLOAT4_SLIDING,
     UPDATE_R_AND_Z,
     UPDATE_X_AND_P,
-    OBM_MATVEC_MULT,
-    UPDATE_B
+    OBM_MATVEC_MULT
 } Kernels;
 
 extern const char *const kNames[NUM_OF_KERNELS];
@@ -37,7 +36,7 @@ typedef struct{
     uint32_t curr_iteration;
     KernelStats (*kernels)[NUM_OF_KERNELS];
 
-    double *cn_elapsed;
+    double cn_elapsed;
 
     uint32_t *cg_iterations;
     double *cg_elapsed;
@@ -49,4 +48,5 @@ KernelStats kernelstats_get();
 void profile_kernel(Profiler *p, Kernels kernel, cl_event event, uint32_t iteration);
 double get_kernel_time(cl_event event);
 void add_kernel_sample(Profiler *p, Kernels kernel, double time_sample, uint32_t iteration);
+void save_profiler_json(Profiler *p, const char *filename);
 #endif

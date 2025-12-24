@@ -11,3 +11,4 @@ cn.exe
 data/img/*.png
 build/
 build-*/
+*.json

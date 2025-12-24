@@ -119,9 +119,10 @@ void* run_conjugate_gradient(void* arg){
     float* ptr_to_save;
 
     struct timespec start, end;
-    clock_gettime(CLOCK_MONOTONIC, &start); 
     float cn_elapsed = 0.0f;
     float progress = 0.0f;
+
+    clock_gettime(CLOCK_MONOTONIC, &start); 
 
     while(solver->time_step < t_args->iterations){
         if(t_args->flags->progress){
@@ -156,6 +157,7 @@ void* run_conjugate_gradient(void* arg){
 
     clock_gettime(CLOCK_MONOTONIC, &end);
     cn_elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+    if(t_args->flags->profile) t_args->profiler->cn_elapsed = cn_elapsed;
 
     printf(TITLE "\nSimulation completed.\n" RESET
         LABEL "Total elapsed time: " RESET "%.3f s\n"

@@ -272,6 +272,12 @@ float conjugate_gradient(Solver* solver, Flags *flags, Profiler *p) {
     clock_gettime(CLOCK_MONOTONIC, &end);
     float elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
 
+    // Advanced profiling
+    if(flags->profile){
+        p->cg_iterations[p->curr_iteration] = k;
+        p->cg_elapsed[p->curr_iteration] = elapsed;
+    }
+
     // Show the total energy (summation of each x_buffer value) 
     // at the end of the PCG simulation if the flag is set
     if(flags->show_energy) show_energy(solver, flags, p);
@@ -526,49 +532,6 @@ cl_event update_x_and_p(Solver* solver, cl_mem* x, cl_mem* p, cl_mem* z, cl_mem*
     return event;
 }
 
-void free_cg_solver(Solver* solver) {
-    OpenCLContext* cl = &solver->cl;
-    
-    if(solver->x) free(solver->x);
-    if(solver->b) free(solver->b);
-
-    if(cl->b_buffer) clReleaseMemObject(cl->b_buffer);
-    if(cl->x_buffer) clReleaseMemObject(cl->x_buffer);
-
-    if(cl->obm_offset_buffer) clReleaseMemObject(cl->obm_offset_buffer);
-    if(cl->obm_values_buffer) clReleaseMemObject(cl->obm_values_buffer);
-    if(cl->kernels.dot_product_vec4) clReleaseKernel(cl->kernels.dot_product_vec4);
-    if(cl->kernels.reduce_sum4_float4_sliding) clReleaseKernel(cl->kernels.reduce_sum4_float4_sliding);
-    if(cl->kernels.update_r_and_z) clReleaseKernel(cl->kernels.update_r_and_z);
-    if(cl->kernels.update_x_and_p) clReleaseKernel(cl->kernels.update_x_and_p);
-    if(cl->kernels.obm_matvec_mult) clReleaseKernel(cl->kernels.obm_matvec_mult);
-    if(cl->kernels.obm_matvec_mult_local) clReleaseKernel(cl->kernels.obm_matvec_mult_local);
-
-    free_temporary_buffers(cl);
-        
-    if(cl->prog) clReleaseProgram(cl->prog);
-    if(cl->q) clReleaseCommandQueue(cl->q);
-    if(cl->ctx) clReleaseContext(cl->ctx);
-} 
-
-void free_temporary_buffers(OpenCLContext *cl){
-    if(cl->temp.Ap) clReleaseMemObject(cl->temp.Ap);
-    if(cl->temp.diagonal_buffer) clReleaseMemObject(cl->temp.diagonal_buffer);
-    if(cl->temp.r_buffer) clReleaseMemObject(cl->temp.r_buffer);
-    if(cl->temp.z_buffer) clReleaseMemObject(cl->temp.z_buffer);
-    if(cl->temp.p_buffer) clReleaseMemObject(cl->temp.p_buffer);
-    if(cl->temp.r_next_buffer) clReleaseMemObject(cl->temp.r_next_buffer);
-    if(cl->temp.z_next_buffer) clReleaseMemObject(cl->temp.z_next_buffer);
-}
-
-void save_result(Solver *solver, size_t size, float* result) {
-    OpenCLContext *cl = &solver->cl;
-
-    cl_int err = clEnqueueReadBuffer(cl->q, 
-            cl->x_buffer, CL_TRUE, 0, size * sizeof(float), result, 0, NULL, NULL);
-    ocl_check(err, "print_buffer read");
-}
-
 cl_event obm_matvec_mult(Solver* solver, cl_mem* vec, cl_mem* result) {
     OpenCLContext *cl = &solver->cl;
     cl_int err;
@@ -657,6 +620,14 @@ cl_event obm_matvec_mult_local(Solver* solver, cl_mem* vec, cl_mem* result) {
     return event;
 }
 
+void save_result(Solver *solver, size_t size, float* result) {
+    OpenCLContext *cl = &solver->cl;
+
+    cl_int err = clEnqueueReadBuffer(cl->q, 
+            cl->x_buffer, CL_TRUE, 0, size * sizeof(float), result, 0, NULL, NULL);
+    ocl_check(err, "print_buffer read");
+}
+
 void show_energy(Solver *solver, Flags *flags, Profiler *p){
     cl_int err;
 
@@ -672,6 +643,41 @@ void show_energy(Solver *solver, Flags *flags, Profiler *p){
 
     clReleaseMemObject(ones_buffer);
     free(ones);
+}
+
+void free_cg_solver(Solver* solver) {
+    OpenCLContext* cl = &solver->cl;
+    
+    if(solver->x) free(solver->x);
+    if(solver->b) free(solver->b);
+
+    if(cl->b_buffer) clReleaseMemObject(cl->b_buffer);
+    if(cl->x_buffer) clReleaseMemObject(cl->x_buffer);
+
+    if(cl->obm_offset_buffer) clReleaseMemObject(cl->obm_offset_buffer);
+    if(cl->obm_values_buffer) clReleaseMemObject(cl->obm_values_buffer);
+    if(cl->kernels.dot_product_vec4) clReleaseKernel(cl->kernels.dot_product_vec4);
+    if(cl->kernels.reduce_sum4_float4_sliding) clReleaseKernel(cl->kernels.reduce_sum4_float4_sliding);
+    if(cl->kernels.update_r_and_z) clReleaseKernel(cl->kernels.update_r_and_z);
+    if(cl->kernels.update_x_and_p) clReleaseKernel(cl->kernels.update_x_and_p);
+    if(cl->kernels.obm_matvec_mult) clReleaseKernel(cl->kernels.obm_matvec_mult);
+    if(cl->kernels.obm_matvec_mult_local) clReleaseKernel(cl->kernels.obm_matvec_mult_local);
+
+    free_temporary_buffers(cl);
+        
+    if(cl->prog) clReleaseProgram(cl->prog);
+    if(cl->q) clReleaseCommandQueue(cl->q);
+    if(cl->ctx) clReleaseContext(cl->ctx);
+} 
+
+void free_temporary_buffers(OpenCLContext *cl){
+    if(cl->temp.Ap) clReleaseMemObject(cl->temp.Ap);
+    if(cl->temp.diagonal_buffer) clReleaseMemObject(cl->temp.diagonal_buffer);
+    if(cl->temp.r_buffer) clReleaseMemObject(cl->temp.r_buffer);
+    if(cl->temp.z_buffer) clReleaseMemObject(cl->temp.z_buffer);
+    if(cl->temp.p_buffer) clReleaseMemObject(cl->temp.p_buffer);
+    if(cl->temp.r_next_buffer) clReleaseMemObject(cl->temp.r_next_buffer);
+    if(cl->temp.z_next_buffer) clReleaseMemObject(cl->temp.z_next_buffer);
 }
 
 // SUPPORT FUNCTIONS FOR THE CRANK NICOLSON SOLVER, THEY ARE NOT CONJUGATE GRADIENT STEPS

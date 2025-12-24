@@ -45,11 +45,12 @@ int main(int argc, char *argv[]) {
 
     if(width != height) {
         fprintf(stderr, "This version of the Crank-Nicolson solver only works with square heatmaps");
-        return 1;
+        return EXIT_FAILURE;
     }
 
     CrankNicolsonSetup *solver = setup(width * width, cfg->dx, cfg->dt, cfg->alpha, norm_img);
     run(solver, cfg->iterations, &flags, p);
+    if(flags.profile) save_profiler_json(p, "profiler.json");;
 
     // CLEAN UP
     if (solver) free_solver(solver);
