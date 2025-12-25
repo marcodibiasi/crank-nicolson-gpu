@@ -12,3 +12,7 @@ data/img/*.png
 build/
 build-*/
 *.json
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
