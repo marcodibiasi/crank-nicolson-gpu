@@ -50,7 +50,7 @@ int main(int argc, char *argv[]) {
 
     CrankNicolsonSetup *solver = setup(width * width, cfg->dx, cfg->dt, cfg->alpha, norm_img);
     run(solver, cfg->iterations, &flags, p);
-    if(flags.profile) save_profiler_json(p, "profiler.json");;
+    if(flags.profile) save_profiler_json(p, "data/output/profiler.json");;
 
     // CLEAN UP
     if (solver) free_solver(solver);
