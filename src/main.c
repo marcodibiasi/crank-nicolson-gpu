@@ -19,9 +19,10 @@ int main(int argc, char *argv[]) {
 
     // HANDLE FLAGS
     Flags flags = parse_args(argc, argv);
+    printf("\n%s\n", flags.profile_path);
 
     if(flags.progress == 1){
-        if(flags.show_energy == 1 || flags.profile == 1 || flags.verbose == 1) {
+        if(flags.show_energy == 1 || flags.verbose == 1) {
             fprintf(stderr, "Flag --progress must be called alone\n");
             return EXIT_FAILURE;
         }
@@ -50,7 +51,12 @@ int main(int argc, char *argv[]) {
 
     CrankNicolsonSetup *solver = setup(width * width, cfg->dx, cfg->dt, cfg->alpha, norm_img);
     run(solver, cfg->iterations, &flags, p);
-    if(flags.profile) save_profiler_json(p, "data/output/profiler.json");;
+    if(flags.profile) {
+        if(flags.profile_path == NULL) 
+            save_profiler_json(p, "data/output/profiler.json");
+        else 
+            save_profiler_json(p, flags.profile_path);
+    }
 
     // CLEAN UP
     if (solver) free_solver(solver);
@@ -64,6 +70,7 @@ int main(int argc, char *argv[]) {
 Flags parse_args(int argc, char* argv[]){
     Flags flags = {0};
     flags.delta_save = 1;
+    flags.profile_path = NULL;
 
     for(int i = 2; i < argc; i++) {
         if(strcmp(argv[i], "--show-energy") == 0) {
@@ -71,6 +78,9 @@ Flags parse_args(int argc, char* argv[]){
         }
         else if(strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "--profile") == 0) {
             flags.profile = 1;
+        }
+        else if(strncmp(argv[i], "--profile-path=", 15) == 0) {
+            flags.profile_path = strdup(argv[i] + 15);
         }
         else if(strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
             flags.verbose = 1;

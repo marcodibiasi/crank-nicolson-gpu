@@ -7,6 +7,7 @@
 typedef struct {
     int show_energy;
     int profile;
+    char* profile_path;
     int verbose;
     int progress;
     int delta_save;
