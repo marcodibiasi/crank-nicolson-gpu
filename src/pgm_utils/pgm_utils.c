@@ -89,7 +89,9 @@ void pgm_save(const char *filename, unsigned char* vec, int size){
 int png_save(const char *filename, unsigned char* vec, int size, int verbose) {
     int width = (int)sqrt((double)size);
     
-    int channels = 1; 
+    unsigned char* heatmap = get_colormap(vec, size, 0.4f);
+
+    int channels = 3; 
     int stride_in_bytes = width * channels;
 
     int success = stbi_write_png(
@@ -97,9 +99,11 @@ int png_save(const char *filename, unsigned char* vec, int size, int verbose) {
         width, 
         width, 
         channels, 
-        vec, 
+        heatmap, 
         stride_in_bytes
     );
+
+    free(heatmap);
     
     if (success) {
         if (verbose) {
@@ -110,4 +114,23 @@ int png_save(const char *filename, unsigned char* vec, int size, int verbose) {
         fprintf(stderr, "Error saving PNG: %s\n", filename);
         return -2;
     }
+}
+
+unsigned char* get_colormap(unsigned char* vec, int size, float gamma){
+    unsigned char* heatmap = malloc(size * 3 * sizeof(char));
+
+    for(int i = 0; i < size; i++){
+        float v = vec[i] / 255.0f;
+        v = powf(v, gamma);
+
+        float r = 0.8f * v + 0.2f * v*v;
+        float g = 0.2f * v + 0.5f * v*v;
+        float b = 0.0f;
+
+        heatmap[3*i + 0] = (unsigned char)(255 * r);
+        heatmap[3*i + 1] = (unsigned char)(255 * g);
+        heatmap[3*i + 2] = (unsigned char)(255 * b);
+    }
+    
+    return heatmap;
 }

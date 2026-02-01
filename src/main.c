@@ -49,6 +49,11 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
+    // Saving the initial frame in a heatmap format
+    //unsigned char* denorm_img = pgm_denormalisation(norm_img, width * width);  
+    //png_save("data/img/t0.png", denorm_img, width * width, flags.verbose);
+    //free(denorm_img);
+
     CrankNicolsonSetup *solver = setup(width * width, cfg->dx, cfg->dt, cfg->alpha, norm_img);
     run(solver, cfg->iterations, &flags, p);
     if(flags.profile) {
@@ -63,6 +68,7 @@ int main(int argc, char *argv[]) {
     if (img) free(img);
     if (cfg->file) free(cfg->file);
     if (cfg) free(cfg);
+    if (p) free(p);
 
     return EXIT_SUCCESS;
 }

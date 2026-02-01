@@ -11,6 +11,7 @@ cn.exe
 data/img/*.png
 build/
 build-*/
+build_*/
 *.json
 __pycache__/
 *.pyc

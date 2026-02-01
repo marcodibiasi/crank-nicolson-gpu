@@ -4,6 +4,6 @@
     "dx": 0.1,
     "dt": 0.1,
     "alpha": 0.1,
-    "iterations": 10 
+    "iterations": 2000
   }
 }
